@@ -752,8 +752,14 @@ const nowStr = () =>
   });
 function joursRestants(str) {
   if (!str) return null;
-  const [d, m, y] = str.split("/");
-  return Math.ceil((new Date(y, m - 1, d) - new Date()) / 864e5);
+  let date;
+  if (str.includes('-')) {
+    date = new Date(str);
+  } else {
+    const [d, m, y] = str.split("/");
+    date = new Date(y, m - 1, d);
+  }
+  return Math.ceil((date - new Date()) / 864e5);
 }
 function statutDelai(dateFin, statut) {
   if (statut === "Terminé")
@@ -5487,13 +5493,16 @@ function AdminView({ user, state, onLogout }) {
   const totalBudget = chantiers.reduce((s, c) => s + c.budget, 0);
   const totalDepense = chantiers.reduce((s, c) => s + c.depense, 0);
   const totalCA = (factures || [])
-    .filter((f) => f.statut === "Payée")
-    .reduce((s, f) => s + f.montantTTC, 0);
+  .filter((f) => f.statut === "Payée" || f.statut === "paid")
+  .reduce((s, f) => s + f.montantTTC, 0);
+  
   const facturesRetard = (factures || []).filter(
-    (f) =>
-      f.statut === "En retard" ||
-      (f.statut === "En attente" && joursRestants(f.dateEcheance) < 0),
-  );
+  (f) =>
+    f.statut === "En retard" ||
+    f.statut === "overdue" ||
+    (( f.statut === "En attente" || f.statut === "sent") && joursRestants(f.dateEcheance) < 0)
+);
+  
   const retards = chantiers.filter(
     (c) => c.statut !== "Terminé" && joursRestants(c.dateFin) < 0,
   );
@@ -5880,7 +5889,7 @@ function AdminDashboard({
           },
           {
             label: "Clients actifs",
-            value: (clients || []).filter((c) => c.statut === "Actif").length,
+            value: (clients || []).filter((c) => c.statut === "Actif" || c.status === "active").length,
             sub: "clients",
             color: "#c084fc",
             onClick: () => setTab("clients"),
