@@ -3116,8 +3116,28 @@ export default function App() {
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
-      if (error) console.error(error);
-      else setChantiers(data);
+      if (error) { console.error(error); return; }
+
+const mapped = (data || []).map(c => ({
+  ...c,
+  nom: c.name,
+  client: c.clients?.name || '',
+  statut: { draft: 'Planifié', planned: 'Planifié', in_progress: 'En cours', completed: 'Terminé', archived: 'Archivé' }[c.status] || c.status,
+  budget: c.budget_amount,
+  depense: c.spent_amount,
+  avancement: c.progress,
+  localisation: c.location,
+  dateDebut: c.start_date,
+  dateFin: c.end_date,
+  equipe: (c.project_members || []).map(m => m.user_id),
+  taches: (c.tasks || []).map(t => ({ id: t.id, label: t.label, done: t.is_done })),
+  blocages: (c.blocages || []).map(b => ({ id: b.id, type: b.type, resolu: b.is_resolved })),
+  photos: [],
+  rapports: [],
+  presences: [],
+}));
+
+setChantiers(mapped);
     }
     loadChantiers();
   }, []);
@@ -3158,7 +3178,6 @@ useEffect(() => {
         console.error(error);
         setClients(CLIENTS_INIT);
       } else {
-        console.log("Clients:", data);
         setClients(data.length > 0 ? data : CLIENTS_INIT);
       }
     }
@@ -3177,7 +3196,6 @@ useEffect(() => {
         console.error(error);
         setDevis(DEVIS_INIT);
       } else {
-        console.log("Devis:", data);
         setDevis(data.length > 0 ? data : DEVIS_INIT);
       }
     }
@@ -3222,7 +3240,6 @@ useEffect(() => {
         paiements: f.payments || [],
       }));
 
-      console.log("Factures mappées:", mapped);
       setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
     }
     load();
@@ -3408,11 +3425,6 @@ useEffect(() => {
           }),
         })),
       }));
-      console.log("User object:", user);
-      console.log("User ID:", user?.id);
-      console.log("Conversations mapped:", mapped);
-      console.log("User ID:", user?.id);
-      console.log("Conversations mapped:", mapped);
 
       setConversations(mapped.length > 0 ? mapped : CONVERSATIONS_INIT);
     }
@@ -7306,7 +7318,7 @@ function AdminClients({ clients, setClients, devis, factures }) {
                   color: "#4ade80",
                 }}
               >
-                {c.nom.charAt(0)}
+                {(c.nom || c.name || '?').charAt(0)}
               </div>
               <div style={{ flex: 1 }}>
                 <div
@@ -7320,7 +7332,7 @@ function AdminClients({ clients, setClients, devis, factures }) {
                   <span
                     style={{ fontSize: 14, fontWeight: 600, color: "#d4e8d6" }}
                   >
-                    {c.nom}
+                    {c.nom || c.name}
                   </span>
                   <span
                     className="badge"
@@ -7329,23 +7341,23 @@ function AdminClients({ clients, setClients, devis, factures }) {
                       color: c.statut === "Actif" ? "#4ade80" : "#fb923c",
                     }}
                   >
-                    {c.statut}
+                    {c.statut || c.statut}
                   </span>
                 </div>
-                <div style={{ fontSize: 12, color: "#4a6a4d" }}>
-                  {c.contact} · {c.tel} · {c.ville}
-                </div>
+               <div style={{ fontSize: 12, color: "#4a6a4d" }}>
+                {c.contact || c.contact_name} · {c.tel || c.contact_phone} · {c.ville || c.city}
+              </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div
-                  style={{ fontSize: 14, fontWeight: 700, color: "#4ade80" }}
-                >
-                  {(c.chiffreAffaires / 1000000).toFixed(1)}M FCFA
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#4ade80" }}>
+                  {((factures || [])
+  .filter(f => (f.clientId === c.id || f.client_id === c.id) && (f.statut === 'paid' || f.statut === 'Payée'))
+  .reduce((s, f) => s + (f.montantTTC || f.amount_ttc || 0), 0) / 1000000).toFixed(1)}M FCFA
                 </div>
                 <div style={{ fontSize: 11, color: "#3a5a3d" }}>
-                  {(devis || []).filter((d) => d.clientId === c.id).length}{" "}
+                  {(devis || []).filter((d) => d.clientId === c.id || d.client_id === c.id).length}{" "}
                   devis ·{" "}
-                  {(factures || []).filter((f) => f.clientId === c.id).length}{" "}
+                  {(factures || []).filter((f) => f.clientId === c.id || f.client_id === c.id).length}{" "}
                   factures
                 </div>
               </div>
