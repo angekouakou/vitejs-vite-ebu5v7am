@@ -3193,6 +3193,21 @@ useEffect(() => {
   }
   loadChantiers();
 }, []);
+ useEffect(() => {
+  async function loadEquipes() {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email, phone')
+        .eq('is_active', true);
+      if (error) throw error;
+      setEquipes(data || []);
+    } catch (err) {
+      console.error('Erreur chargement équipes:', err);
+    }
+  }
+  loadEquipes();
+}, []);
 
   const [clients, setClients] = useState([]);
   useEffect(() => {
@@ -5787,13 +5802,14 @@ function AdminView({ user, state, onLogout }) {
           />
         )}
         {tab === "stocks" && (
-          <AdminStocks
+         <AdminStocks
             equipements={equipements}
             setEquipements={setEquipements}
             attributions={attributions}
             setAttributions={setAttributions}
             chantiers={chantiers}
             equipes={equipes}
+            clients={clients}
           />
         )}
         {tab === "documents" && (
@@ -9178,19 +9194,19 @@ function AdminStocks({
     valeur: "",
     notes: "",
   });
-  useEffect(() => {
-  if (clients?.length > 0) {
-    setForm(f => ({ ...f, clientId: clients[0].id, clientNom: clients[0].nom || clients[0].name || '' }));
-  }
-}, [clients]);
   const [attrForm, setAttrForm] = useState({
-    equipementId: (equipements || [])[0]?.id || 1,
-    quantite: 1,
-    technicien: (equipes || [])[0]?.nom || "",
-    chantierId: (chantiers || [])[0]?.id || 1,
-    dateRetourPrevue: "",
-    notes: "",
-  });
+      equipementId: (equipements || [])[0]?.id || 1,
+      quantite: 1,
+      technicien: "",
+      chantierId: (chantiers || [])[0]?.id || 1,
+      dateRetourPrevue: "",
+      notes: "",
+    });
+    useEffect(() => {
+      if (equipes?.length > 0) {
+        setAttrForm(f => ({ ...f, technicien: equipes[0].id }));
+      }
+    }, [equipes]);
   const [restForm, setRestForm] = useState({ etatRetour: "Bon", notes: "" });
 
   const CATS = [
@@ -9225,19 +9241,11 @@ function AdminStocks({
       Infrastructure: "🏗️",
     })[c] || "🔧";
 
-  function addEq() {
-    if (!eqForm.nom) return;
-    setEquipements((p) => [
-      ...(p || []),
-      {
-        ...eqForm,
-        id: Date.now(),
-        quantiteTotal: parseInt(eqForm.quantiteTotal) || 1,
-        quantiteDisponible:
-          parseInt(eqForm.quantiteDisponible || eqForm.quantiteTotal) || 1,
-        valeur: parseInt(eqForm.valeur) || 0,
-      },
-    ]);
+  async function addEq() {
+  if (!eqForm.nom) return;
+  try {
+    const nouvel = await createEquipement(eqForm);
+    setEquipements(p => [nouvel, ...(p || [])]);
     setEqForm({
       reference: "",
       nom: "",
@@ -9251,60 +9259,72 @@ function AdminStocks({
       notes: "",
     });
     setShowAddEq(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
-  function attribuer() {
-    const eq = (equipements || []).find(
-      (e) => e.id === parseInt(attrForm.equipementId),
-    );
-    const qte = parseInt(attrForm.quantite) || 1;
-    if (!eq || eq.quantiteDisponible < qte || !attrForm.technicien) return;
-    const chantier = (chantiers || []).find(
-      (c) => c.id === parseInt(attrForm.chantierId),
-    );
-    setAttributions((p) => [
-      ...(p || []),
-      {
-        ...attrForm,
-        id: Date.now(),
-        equipementId: parseInt(attrForm.equipementId),
-        equipementNom: eq.nom,
-        chantierId: parseInt(attrForm.chantierId),
-        chantierNom: chantier?.nom || "",
-        quantite: qte,
-        dateAttribution: todayStr(),
-        dateRetour: null,
-        etatDepart: "Bon",
-        etatRetour: null,
-      },
-    ]);
-    setEquipements((p) =>
-      (p || []).map((e) =>
+  async function attribuer() {
+    console.log('attribuer appelé', attrForm);
+  const eq = (equipements || []).find(
+  (e) => String(e.id) === String(attrForm.equipementId),
+);
+  const qte = parseInt(attrForm.quantite) || 1;
+  if (!eq || eq.quantiteDisponible < qte || !attrForm.technicien) return;
+  const chantier = (chantiers || []).find(
+  (c) => String(c.id) === String(attrForm.chantierId),
+);
+  try {
+    const data = await attribuerEquipement({
+      equipementId: attrForm.equipementId,
+      chantierId: null,
+      technicienId: attrForm.technicien,
+      quantite: qte,
+      dateRetourPrevue: attrForm.dateRetourPrevue || null,
+      quantiteDispo: eq.quantiteDisponible,
+    }, null);
+    setAttributions(p => [
+  ...(p || []),
+  {
+    ...data,
+    equipementId: attrForm.equipementId,
+    equipementNom: eq.nom,
+    chantierNom: chantier?.nom || "",
+    dateAttribution: todayStr(),
+    dateRetour: null,
+    etatDepart: "Bon",
+    etatRetour: null,
+  },
+]);
+    setEquipements(p =>
+      (p || []).map(e =>
         e.id === eq.id
           ? { ...e, quantiteDisponible: e.quantiteDisponible - qte }
           : e,
       ),
     );
+    console.log('fermeture modal');
     setShowAttribuer(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
-  function restituer() {
-    if (!showRestituer) return;
-    const attr = showRestituer;
-    setAttributions((p) =>
-      (p || []).map((a) =>
+  async function restituer() {
+  if (!showRestituer) return;
+  const attr = showRestituer;
+  try {
+    await restituerEquipement(attr.id, null);
+    setAttributions(p =>
+      (p || []).map(a =>
         a.id === attr.id
-          ? {
-              ...a,
-              dateRetour: todayStr(),
-              etatRetour: restForm.etatRetour,
-              notes: restForm.notes,
-            }
+          ? { ...a, dateRetour: todayStr(), etatRetour: restForm.etatRetour, notes: restForm.notes }
           : a,
       ),
     );
-    setEquipements((p) =>
-      (p || []).map((e) =>
+    console.log('attr.equipementId:', attr.equipementId, 'attr.quantite:', attr.quantite);
+    setEquipements(p =>
+      (p || []).map(e =>
         e.id === attr.equipementId
           ? { ...e, quantiteDisponible: e.quantiteDisponible + attr.quantite }
           : e,
@@ -9312,7 +9332,10 @@ function AdminStocks({
     );
     setRestForm({ etatRetour: "Bon", notes: "" });
     setShowRestituer(null);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   return (
     <div>
@@ -9881,7 +9904,7 @@ function AdminStocks({
               }
             >
               {(equipes || []).map((e) => (
-                <option key={e.id}>{e.nom}</option>
+                <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
               ))}
             </select>
           </div>

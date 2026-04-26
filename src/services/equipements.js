@@ -2,6 +2,7 @@ import { supabase } from '../supabase';
 // ═══════════════════════════════════════
 // equipements.js
 // ═══════════════════════════════════════
+const COMPANY_ID = '00000000-0000-0000-0000-000000000001';
 
 export function mapEquipement(e) {
   return {
@@ -32,7 +33,7 @@ export async function attribuerEquipement(form, userId) {
 
   const { data, error } = await supabase
     .from('equipment_assignments')
-    .insert({ equipment_id: form.equipementId, project_id: form.chantierId || null, assigned_to: form.technicienId, quantity: parseInt(form.quantite), assigned_at: new Date().toISOString().split('T')[0], expected_return_at: form.dateRetourPrevue || null, condition_out: 'good', assigned_by: userId })
+    .insert({ equipment_id: form.equipementId, project_id: null, assigned_to: form.technicienId, quantity: parseInt(form.quantite), assigned_at: new Date().toISOString().split('T')[0], expected_return_at: form.dateRetourPrevue || null, condition_out: 'good', assigned_by: userId })
     .select().single();
   if (error) throw error;
   return data;
