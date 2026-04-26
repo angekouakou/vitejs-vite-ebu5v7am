@@ -1324,23 +1324,21 @@ function MsgPanel({
   const [showNew, setShowNew] = useState(false);
   const [newForm, setNewForm] = useState({ nom: "", participants: [] });
   const msgEnd = useRef();
+  const isMobile = window.innerWidth < 768;
   const channelRef = useRef(null);
 
 useEffect(() => {
   if (!activeConv) return;
-  
-  // Désabonner l'ancienne conversation
   if (channelRef.current) unsubscribeChannel(channelRef.current);
   
-  // S'abonner à la nouvelle
   channelRef.current = subscribeToConversation(activeConv.id, (newMsg) => {
     setActiveConv(p => ({
       ...p,
       messages: [...(p?.messages || []), {
         ...newMsg,
-        auteur: equipes.find(e => e.id === newMsg.sender_id) 
-  ? `${equipes.find(e => e.id === newMsg.sender_id).first_name} ${equipes.find(e => e.id === newMsg.sender_id).last_name}`
-  : newMsg.sender_id,
+        auteur: equipes.find(e => e.id === newMsg.sender_id)
+          ? `${equipes.find(e => e.id === newMsg.sender_id).first_name} ${equipes.find(e => e.id === newMsg.sender_id).last_name}`
+          : newMsg.sender_id,
         contenu: newMsg.content,
         urgent: newMsg.is_urgent,
         lu: false,
@@ -1353,7 +1351,10 @@ useEffect(() => {
   });
 
   return () => {
-    if (channelRef.current) unsubscribeChannel(channelRef.current);
+    if (channelRef.current) {
+      unsubscribeChannel(channelRef.current);
+      channelRef.current = null;
+    }
   };
 }, [activeConv?.id]);
 
@@ -1416,14 +1417,15 @@ useEffect(() => {
       }}
     >
       <div
-        style={{
-          width: 240,
-          borderRight: "1px solid #1a2e1d",
-          display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-        }}
-      >
+  style={{
+    width: isMobile ? "50%" : 240,
+    borderRight: "1px solid #1a2e1d",
+    display: "flex",
+    flexDirection: "column",
+    flexShrink: 0,
+    minWidth: isMobile ? 80 : 240,
+  }}
+>
         <div
           style={{
             padding: "12px 14px",
@@ -1669,65 +1671,37 @@ useEffect(() => {
             })}
             <div ref={msgEnd} />
           </div>
-          <div style={{ padding: "11px 16px", borderTop: "1px solid #1a2e1d" }}>
-            {isUrgent && (
-              <div
-                style={{
-                  background: "#2a1a0a",
-                  border: "1px solid #5a3a1a",
-                  borderRadius: 8,
-                  padding: "5px 12px",
-                  marginBottom: 8,
-                  fontSize: 11,
-                  color: "#fb923c",
-                }}
-              >
-                ⚠️ Urgent — WhatsApp automatique
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-              <button
-                onClick={() => setIsUrgent((p) => !p)}
-                style={{
-                  background: isUrgent ? "#3a2a1a" : "#1a2e1d",
-                  border: `1px solid ${isUrgent ? "#6a4a2a" : "#2d5a30"}`,
-                  borderRadius: 8,
-                  padding: "9px 11px",
-                  cursor: "pointer",
-                  fontSize: 14,
-                  flexShrink: 0,
-                }}
-              >
-                ⚠️
-              </button>
-              <textarea
-                className="field"
-                style={{
-                  borderRadius: 10,
-                  resize: "none",
-                  height: 40,
-                  padding: "9px 13px",
-                }}
-                placeholder="Écrire... (Entrée pour envoyer)"
-                value={msgText}
-                onChange={(e) => setMsgText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMsg();
-                  }
-                }}
-              />
-              <button
-                className="btn-g"
-                onClick={sendMsg}
-                disabled={!msgText.trim()}
-                style={{ flexShrink: 0, height: 40, padding: "0 16px" }}
-              >
-                Envoyer
-              </button>
-            </div>
-          </div>
+          <div style={{ padding: isMobile ? "6px 8px" : "11px 16px", borderTop: "1px solid #1a2e1d" }}>
+  {isUrgent && (
+    <div style={{ background: "#2a1a0a", border: "1px solid #5a3a1a", borderRadius: 8, padding: "3px 8px", marginBottom: 4, fontSize: 10, color: "#fb923c" }}>
+      ⚠️ Urgent
+    </div>
+  )}
+  <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+    <button
+      onClick={() => setIsUrgent(p => !p)}
+      style={{ background: isUrgent ? "#3a2a1a" : "#1a2e1d", border: `1px solid ${isUrgent ? "#6a4a2a" : "#2d5a30"}`, borderRadius: 8, padding: isMobile ? "6px 8px" : "9px 11px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}
+    >
+      ⚠️
+    </button>
+    <textarea
+      className="field"
+      style={{ borderRadius: 10, resize: "none", height: isMobile ? 36 : 40, padding: "6px 10px", fontSize: isMobile ? 14 : 13, flex: 1 }}
+      placeholder="Écrire..."
+      value={msgText}
+      onChange={(e) => setMsgText(e.target.value)}
+      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } }}
+    />
+    <button
+      className="btn-g"
+      onClick={sendMsg}
+      disabled={!msgText.trim()}
+      style={{ flexShrink: 0, height: isMobile ? 36 : 40, width: isMobile ? 36 : 40, padding: 0, fontSize: 16 }}
+    >
+      ➤
+    </button>
+  </div>
+</div>
         </div>
       )}
       {showNew && (
@@ -5566,6 +5540,8 @@ function AdminView({ user, state, onLogout }) {
 
   const [tab, setTab] = useState("dashboard");
   const [showNt, setShowNt] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isMobile = window.innerWidth < 768;
 
   const totalBudget = chantiers.reduce((s, c) => s + c.budget, 0);
   const totalDepense = chantiers.reduce((s, c) => s + (c.depense || c.spent_amount || 0), 0);
@@ -5628,281 +5604,153 @@ function AdminView({ user, state, onLogout }) {
   const groups = [...new Set(ADMIN_TABS.map((t) => t.group))];
 
   return (
-    <div
-      style={{
-        fontFamily: "'DM Sans',sans-serif",
-        display: "flex",
-        height: "100vh",
-      }}
-    >
-      {/* SIDEBAR */}
+  <div style={{ fontFamily: "'DM Sans',sans-serif", display: "flex", height: "100vh" }}>
+
+    {/* OVERLAY mobile */}
+    {isMobile && sidebarOpen && (
       <div
+        onClick={() => setSidebarOpen(false)}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }}
+      />
+    )}
+
+    {/* BOUTON HAMBURGER */}
+    {isMobile && (
+      <button
+        onClick={() => setSidebarOpen(p => !p)}
         style={{
-          width: 215,
-          background: "#0d1610",
-          borderRight: "1px solid #1a2e1d",
-          display: "flex",
-          flexDirection: "column",
-          padding: "16px 10px",
-          flexShrink: 0,
-          overflowY: "auto",
+          position: "fixed", top: 12, left: 12, zIndex: 60,
+          background: "#1a3a2a", border: "none", borderRadius: 8,
+          padding: "8px 12px", color: "#4ade80", fontSize: 18, cursor: "pointer",
         }}
       >
-        <div style={{ marginBottom: 18, paddingLeft: 5 }}>
-          <div
-            style={{
-              fontFamily: "'Space Grotesk',sans-serif",
-              fontSize: 17,
-              fontWeight: 700,
-              color: "#4ade80",
-            }}
-          >
-            DIGINETS CI
-          </div>
-          <div style={{ fontSize: 11, color: "#3a5a3d" }}>ERP Direction</div>
+        ☰
+      </button>
+    )}
+
+    {/* SIDEBAR */}
+    <div style={{
+      width: 215,
+      background: "#0d1610",
+      borderRight: "1px solid #1a2e1d",
+      display: "flex",
+      flexDirection: "column",
+      padding: "16px 10px",
+      flexShrink: 0,
+      overflowY: "auto",
+      position: isMobile ? "fixed" : "relative",
+      top: 0,
+      left: isMobile ? (sidebarOpen ? 0 : -220) : 0,
+      height: "100vh",
+      zIndex: 50,
+      transition: "left 0.25s ease",
+    }}>
+      <div style={{ marginBottom: 18, paddingLeft: 5 }}>
+        <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: 17, fontWeight: 700, color: "#4ade80" }}>
+          DIGINETS CI
         </div>
+        <div style={{ fontSize: 11, color: "#3a5a3d" }}>ERP Direction</div>
+      </div>
 
-        <div
-          style={{
-            background: "#0a1a0d",
-            border: "1px solid #1a2e1d",
-            borderRadius: 10,
-            padding: 9,
-            marginBottom: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: "50%",
-              background: "#1a3a2a",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#c084fc",
-            }}
-          >
-            {user.avatar}
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#d4e8d6" }}>
-              {user.nom}
-            </div>
-            <span
-              className="badge"
-              style={{ background: "#1a1a2a", color: "#c084fc", fontSize: 10 }}
-            >
-              Direction
-            </span>
-          </div>
+      <div style={{ background: "#0a1a0d", border: "1px solid #1a2e1d", borderRadius: 10, padding: 9, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#1a3a2a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#c084fc" }}>
+          {user.avatar}
         </div>
-
-        {totalBlocages > 0 && (
-          <div
-            className="alert-bar orange"
-            style={{ fontSize: 11, cursor: "pointer" }}
-            onClick={() => setTab("chantiers")}
-          >
-            ⚠️ {totalBlocages} blocage(s)
-          </div>
-        )}
-        {retards.length > 0 && (
-          <div
-            className="alert-bar"
-            style={{ fontSize: 11, cursor: "pointer" }}
-            onClick={() => setTab("chantiers")}
-          >
-            🔴 {retards.length} retard(s)
-          </div>
-        )}
-        {facturesRetard.length > 0 && (
-          <div
-            className="alert-bar orange"
-            style={{ fontSize: 11, cursor: "pointer" }}
-            onClick={() => setTab("factures")}
-          >
-            💰 {facturesRetard.length} facture(s) en retard
-          </div>
-        )}
-        {alertesStock.length > 0 && (
-          <div
-            className="alert-bar blue"
-            style={{ fontSize: 11, cursor: "pointer" }}
-            onClick={() => setTab("stocks")}
-          >
-            📦 {alertesStock.length} alerte(s) stock
-          </div>
-        )}
-        {msgsNonLus > 0 && (
-          <div
-            className="alert-bar green"
-            style={{ fontSize: 11, cursor: "pointer" }}
-            onClick={() => setTab("messagerie")}
-          >
-            💬 {msgsNonLus} message(s)
-          </div>
-        )}
-
-        {groups.map((group) => (
-          <div key={group} style={{ marginBottom: 4 }}>
-            <div
-              style={{
-                fontSize: 10,
-                color: "#2a4a2d",
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.8px",
-                paddingLeft: 5,
-                marginBottom: 2,
-                marginTop: 8,
-              }}
-            >
-              {group}
-            </div>
-            {ADMIN_TABS.filter((t) => t.group === group).map((t) => (
-              <button
-                key={t.id}
-                className={`sb-btn ${tab === t.id ? "active" : ""}`}
-                onClick={() => setTab(t.id)}
-                style={{ marginBottom: 1 }}
-              >
-                <span style={{ fontSize: 13 }}>{t.icon}</span>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        ))}
-
-        <div
-          style={{
-            marginTop: "auto",
-            paddingTop: 8,
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
-          <NotifPanel
-            notifs={notifs}
-            unread={notifs.length}
-            show={showNt}
-            setShow={setShowNt}
-            markRead={() => {}}
-          />
-          <button
-            className="btn-r"
-            style={{ width: "100%", padding: "8px" }}
-            onClick={onLogout}
-          >
-            ← Déconnexion
-          </button>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#d4e8d6" }}>{user.nom}</div>
+          <span className="badge" style={{ background: "#1a1a2a", color: "#c084fc", fontSize: 10 }}>Direction</span>
         </div>
       </div>
 
-      {/* CONTENU */}
-      <div style={{ flex: 1, overflow: "auto", padding: "24px" }}>
-        {tab === "dashboard" && (
-          <AdminDashboard
-            chantiers={chantiers}
-            factures={factures}
-            clients={clients}
-            equipements={equipements}
-            alertesStock={alertesStock}
-            facturesRetard={facturesRetard}
-            retards={retards}
-            totalBudget={totalBudget}
-            totalDepense={totalDepense}
-            totalCA={totalCA}
-            setTab={setTab}
-          />
-        )}
-        {tab === "chantiers" && <AdminChantiers chantiers={chantiers} setChantiers={setChantiers} equipes={equipes} user={user} factures={factures} />}
-        {tab === "equipes" && (
-          <AdminEquipes
-            equipes={equipes}
-            setEquipes={setEquipes}
-            chantiers={chantiers}
-          />
-        )}
-        {tab === "clients" && (
-          <AdminClients
-            clients={clients}
-            setClients={setClients}
-            devis={devis}
-            factures={factures}
-          />
-        )}
-        {tab === "devis" && (
-          <AdminDevis
-            devis={devis}
-            setDevis={setDevis}
-            clients={clients}
-            factures={factures}
-            setFactures={setFactures}
-          />
-        )}
-        {tab === "factures" && (
-          <AdminFactures
-            factures={factures}
-            setFactures={setFactures}
-            clients={clients}
-          />
-        )}
-        {tab === "contrats" && (
-          <AdminContrats
-            contrats={contrats}
-            setContrats={setContrats}
-            clients={clients}
-          />
-        )}
-        {tab === "stocks" && (
-         <AdminStocks
-            equipements={equipements}
-            setEquipements={setEquipements}
-            attributions={attributions}
-            setAttributions={setAttributions}
-            chantiers={chantiers}
-            equipes={equipes}
-            clients={clients}
-          />
-        )}
-        {tab === "documents" && (
-          <AdminDocuments
-            documents={documents}
-            setDocuments={setDocuments}
-            chantiers={chantiers}
-            user={user}
-          />
-        )}
-        {tab === "messagerie" && (
-          <AdminMessagerie
-            user={user}
-            conversations={conversations}
-            setConversations={setConversations}
-            equipes={equipes}
-          />
-        )}
-        {tab === "ia" && (
-          <AdminIA
-            user={user}
-            chantiers={chantiers}
-            clients={clients}
-            factures={factures}
-            equipements={equipements}
-            totalBudget={totalBudget}
-            totalDepense={totalDepense}
-            totalCA={totalCA}
-          />
-        )}
+      {totalBlocages > 0 && (
+        <div className="alert-bar orange" style={{ fontSize: 11, cursor: "pointer" }} onClick={() => setTab("chantiers")}>
+          ⚠️ {totalBlocages} blocage(s)
+        </div>
+      )}
+      {retards.length > 0 && (
+        <div className="alert-bar" style={{ fontSize: 11, cursor: "pointer" }} onClick={() => setTab("chantiers")}>
+          🔴 {retards.length} retard(s)
+        </div>
+      )}
+      {facturesRetard.length > 0 && (
+        <div className="alert-bar orange" style={{ fontSize: 11, cursor: "pointer" }} onClick={() => setTab("factures")}>
+          💰 {facturesRetard.length} facture(s) en retard
+        </div>
+      )}
+      {alertesStock.length > 0 && (
+        <div className="alert-bar blue" style={{ fontSize: 11, cursor: "pointer" }} onClick={() => setTab("stocks")}>
+          📦 {alertesStock.length} alerte(s) stock
+        </div>
+      )}
+      {msgsNonLus > 0 && (
+        <div className="alert-bar green" style={{ fontSize: 11, cursor: "pointer" }} onClick={() => setTab("messagerie")}>
+          💬 {msgsNonLus} message(s)
+        </div>
+      )}
+
+      {groups.map((group) => (
+        <div key={group} style={{ marginBottom: 4 }}>
+          <div style={{ fontSize: 10, color: "#2a4a2d", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", paddingLeft: 5, marginBottom: 2, marginTop: 8 }}>
+            {group}
+          </div>
+          {ADMIN_TABS.filter((t) => t.group === group).map((t) => (
+            <button
+              key={t.id}
+              className={`sb-btn ${tab === t.id ? "active" : ""}`}
+              onClick={() => { setTab(t.id); if (isMobile) setSidebarOpen(false); }}
+              style={{ marginBottom: 1 }}
+            >
+              <span style={{ fontSize: 13 }}>{t.icon}</span>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      <div style={{ marginTop: "auto", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+        <NotifPanel notifs={notifs} unread={notifs.length} show={showNt} setShow={setShowNt} markRead={() => {}} />
+        <button className="btn-r" style={{ width: "100%", padding: "8px" }} onClick={onLogout}>
+          ← Déconnexion
+        </button>
       </div>
     </div>
-  );
+
+    {/* CONTENU */}
+    <div style={{ flex: 1, overflow: "auto", padding: isMobile ? "12px" : "24px", marginTop: isMobile ? 0 : 0 }}>
+      {tab === "dashboard" && (
+        <AdminDashboard
+          chantiers={chantiers} factures={factures} clients={clients}
+          equipements={equipements} alertesStock={alertesStock}
+          facturesRetard={facturesRetard} retards={retards}
+          totalBudget={totalBudget} totalDepense={totalDepense}
+          totalCA={totalCA} setTab={setTab}
+        />
+      )}
+      {tab === "chantiers" && <AdminChantiers chantiers={chantiers} setChantiers={setChantiers} equipes={equipes} user={user} factures={factures} />}
+      {tab === "equipes" && <AdminEquipes equipes={equipes} setEquipes={setEquipes} chantiers={chantiers} />}
+      {tab === "clients" && <AdminClients clients={clients} setClients={setClients} devis={devis} factures={factures} />}
+      {tab === "devis" && <AdminDevis devis={devis} setDevis={setDevis} clients={clients} factures={factures} setFactures={setFactures} />}
+      {tab === "factures" && <AdminFactures factures={factures} setFactures={setFactures} clients={clients} />}
+      {tab === "contrats" && <AdminContrats contrats={contrats} setContrats={setContrats} clients={clients} />}
+      {tab === "stocks" && (
+        <AdminStocks
+          equipements={equipements} setEquipements={setEquipements}
+          attributions={attributions} setAttributions={setAttributions}
+          chantiers={chantiers} equipes={equipes} clients={clients}
+        />
+      )}
+      {tab === "documents" && <AdminDocuments documents={documents} setDocuments={setDocuments} chantiers={chantiers} user={user} />}
+      {tab === "messagerie" && <AdminMessagerie user={user} conversations={conversations} setConversations={setConversations} equipes={equipes} />}
+      {tab === "ia" && (
+        <AdminIA
+          user={user} chantiers={chantiers} clients={clients}
+          factures={factures} equipements={equipements}
+          totalBudget={totalBudget} totalDepense={totalDepense} totalCA={totalCA}
+        />
+      )}
+    </div>
+  </div>
+);
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────
