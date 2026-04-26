@@ -1,5 +1,18 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
+import { createChantier, updateChantier, deleteChantier, assignerEquipe, mapChantier } from './services/chantiers';
+import { createTache, toggleTache, deleteTache } from './services/taches';
+import { pointerArrivee, pointerDepart } from './services/presences';
+import { uploadPhoto } from './services/photos';
+import { signalerBlocage, resoudreBlocage } from './services/blocages';
+import { soumettreRapport } from './services/rapports';
+import { createFacture, enregistrerPaiement, deleteFacture, mapFacture } from './services/factures';
+import { createDevis, updateStatutDevis, deleteDevis, mapDevis } from './services/devis';
+import { createClient, updateClient, deleteClient, mapClient } from './services/clients';
+import { createContrat, deleteContrat, mapContrat } from './services/contrats';
+import { createEquipement, attribuerEquipement, restituerEquipement } from './services/equipements';
+import { sendMessage } from './services/messages';
+import { uploadDocument, deleteDocument } from './services/documents';
 // ════════════ DONNÉES ════════════
 
 const USERS = [
@@ -3149,27 +3162,16 @@ setChantiers(mapped);
   }, []);
   const [equipes, setEquipes] = useState([]);
 useEffect(() => {
-  async function load() {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*, roles(name, label)')
-      .is('deleted_at', null)
-      .eq('company_id', '00000000-0000-0000-0000-000000000001');
-
-    if (error) { console.error(error); setEquipes(EQUIPES_INIT); return; }
-
-    const mapped = (data || []).map(u => ({
-      ...u,
-      nom: `${u.first_name} ${u.last_name}`,
-      role: u.roles?.name || 'technicien',
-      poste: u.roles?.label || 'Technicien',
-      statut: u.is_active ? 'Actif' : 'Inactif',
-      tel: u.phone || '',
-    }));
-
-    setEquipes(mapped.length > 0 ? mapped : EQUIPES_INIT);
+  async function loadChantiers() {
+    try {
+      const data = await import('./services/chantiers').then(m => m.loadChantiers());
+      setChantiers(data);
+    } catch (err) {
+      console.error(err);
+      setChantiers(CHANTIERS_INIT);
+    }
   }
-  load();
+  loadChantiers();
 }, []);
 
   const [clients, setClients] = useState([]);
@@ -3602,7 +3604,7 @@ function ChefView({ user, state, onLogout }) {
 
   // Stats
   const totalBudget = mesChantiers.reduce((s, c) => s + c.budget, 0);
-  const totalDepense = mesChantiers.reduce((s, c) => s + c.depense, 0);
+  const totalDepense = mesChantiers.reduce((s, c) => s + getDepense(c.id), 0);
   const totalBlocages = mesChantiers.reduce(
     (s, c) => s + (c.blocages || []).filter((b) => !b.resolu).length,
     0,
@@ -3735,7 +3737,7 @@ function ChefView({ user, state, onLogout }) {
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
-          system: `Tu es l'assistant de DIGINETS CI. Chef de chantier: ${user.nom}.\nCHANTIERS:\n${mesChantiers.map((c) => `${c.nom}|${c.client}|${c.statut}|${c.avancement}%|Budget:${c.budget.toLocaleString()} FCFA|Dépensé:${c.depense.toLocaleString()} FCFA|Fin:${c.dateFin}|Blocages:${(c.blocages || []).filter((b) => !b.resolu).length}`).join("; ")}\nBudget total:${totalBudget.toLocaleString()} FCFA|Dépensé:${totalDepense.toLocaleString()} FCFA\nRéponds en français, concis.`,
+          system: `Tu es l'assistant de DIGINETS CI. Chef de chantier: ${user.nom}.\nCHANTIERS:\n${mesChantiers.map((c) => `${c.nom}|${c.client}|${c.statut}|${c.avancement}%|Budget:${c.budget.toLocaleString()} FCFA|Dépensé:${getDepense(c.id).toLocaleString()} FCFA|Fin:${c.dateFin}|Blocages:${(c.blocages || []).filter((b) => !b.resolu).length}`).join("; ")}\nBudget total:${totalBudget.toLocaleString()} FCFA|Dépensé:${totalDepense.toLocaleString()} FCFA\nRéponds en français, concis.`,
           messages: next.map((m) => ({ role: m.role, content: m.content })),
         }),
       });
@@ -4147,7 +4149,7 @@ function ChefView({ user, state, onLogout }) {
                         >
                           Budget: {fmt(c.budget)} · Consommé:{" "}
                           {c.budget > 0
-                            ? Math.round((c.depense / c.budget) * 100)
+                            ? Math.round((getDepense(c.id) / c.budget) * 100)
                             : 0}
                           % · 📝{(c.rapports || []).length} · 📷
                           {(c.photos || []).length}
@@ -4229,7 +4231,7 @@ function ChefView({ user, state, onLogout }) {
                       onClick={() => {
                         setUpForm({
                           avancement: selected.avancement,
-                          depense: selected.depense,
+                          depense: getDepense(selected.id),
                           statut: selected.statut,
                         });
                         setShowUpdate(selected);
@@ -4295,10 +4297,10 @@ function ChefView({ user, state, onLogout }) {
                   <div>
                     {[
                       ["Budget total", selected.budget, "#60a5fa"],
-                      ["Dépensé", selected.depense, "#fb923c"],
+                      ["Dépensé", getDepense(selected.id), "#fb923c"],
                       [
                         "Restant",
-                        selected.budget - selected.depense,
+                        selected.budget - getDepense(selected.id),
                         "#4ade80",
                       ],
                     ].map(([k, v, col]) => (
@@ -4351,7 +4353,7 @@ function ChefView({ user, state, onLogout }) {
                         >
                           {selected.budget > 0
                             ? Math.round(
-                                (selected.depense / selected.budget) * 100,
+                                (getDepense(selected.id) / selected.budget) * 100,
                               )
                             : 0}
                           %
@@ -4361,7 +4363,7 @@ function ChefView({ user, state, onLogout }) {
                         <div
                           className="pfill"
                           style={{
-                            width: `${selected.budget > 0 ? Math.round((selected.depense / selected.budget) * 100) : 0}%`,
+                            width: `${selected.budget > 0 ? Math.round((getDepense(selected.id) / selected.budget) * 100) : 0}%`,
                             background:
                               "linear-gradient(90deg,#166534,#4ade80)",
                           }}
@@ -5491,7 +5493,7 @@ function AdminView({ user, state, onLogout }) {
   const [showNt, setShowNt] = useState(false);
 
   const totalBudget = chantiers.reduce((s, c) => s + c.budget, 0);
-  const totalDepense = chantiers.reduce((s, c) => s + c.depense, 0);
+  const totalDepense = chantiers.reduce((s, c) => s + (c.depense || c.spent_amount || 0), 0);
   const totalCA = (factures || [])
   .filter((f) => f.statut === "Payée" || f.statut === "paid")
   .reduce((s, f) => s + f.montantTTC, 0);
@@ -5745,13 +5747,7 @@ function AdminView({ user, state, onLogout }) {
             setTab={setTab}
           />
         )}
-        {tab === "chantiers" && (
-          <AdminChantiers
-            chantiers={chantiers}
-            setChantiers={setChantiers}
-            equipes={equipes}
-          />
-        )}
+        {tab === "chantiers" && <AdminChantiers chantiers={chantiers} setChantiers={setChantiers} equipes={equipes} user={user} factures={factures} />}
         {tab === "equipes" && (
           <AdminEquipes
             equipes={equipes}
@@ -6088,7 +6084,13 @@ function AdminDashboard({
 }
 
 // ─── CHANTIERS ────────────────────────────────────────────────
-function AdminChantiers({ chantiers, setChantiers, equipes }) {
+function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
+  function getDepense(chantierId) {
+    return (factures || [])
+      .filter(f => f.project_id === chantierId || f.chantierId === chantierId)
+      .reduce((s, f) => s + (f.amount_paid || 0), 0);
+  }
+
   const [selected, setSelected] = useState(null);
   const [detailTab, setDetailTab] = useState("infos");
   const [showAdd, setShowAdd] = useState(false);
@@ -6293,10 +6295,10 @@ function AdminChantiers({ chantiers, setChantiers, equipes }) {
                 className="btn-b"
                 onClick={() => {
                   setUpForm({
-                    avancement: selected.avancement,
-                    depense: selected.depense,
-                    statut: selected.statut,
-                  });
+                  avancement: selected.avancement || selected.progress || 0,
+                  depense: getDepense(selected.id) || selected.spent_amount || 0,
+                  statut: selected.statut || selected.status || 'En cours',
+                });
                   setShowUpdate(selected);
                 }}
               >
@@ -6368,8 +6370,8 @@ function AdminChantiers({ chantiers, setChantiers, equipes }) {
             <div>
               {[
                 ["Budget total", selected.budget, "#60a5fa"],
-                ["Dépensé", selected.depense, "#fb923c"],
-                ["Restant", selected.budget - selected.depense, "#4ade80"],
+                ["Dépensé", getDepense(selected.id), "#fb923c"],
+                ["Restant", selected.budget - getDepense(selected.id), "#4ade80"],
               ].map(([k, v, col]) => (
                 <div
                   key={k}
@@ -6411,7 +6413,7 @@ function AdminChantiers({ chantiers, setChantiers, equipes }) {
                     style={{ fontSize: 14, color: "#4ade80", fontWeight: 700 }}
                   >
                     {selected.budget > 0
-                      ? Math.round((selected.depense / selected.budget) * 100)
+                      ? Math.round((getDepense(selected.id) / selected.budget) * 100)
                       : 0}
                     %
                   </span>
@@ -6420,7 +6422,7 @@ function AdminChantiers({ chantiers, setChantiers, equipes }) {
                   <div
                     className="pfill"
                     style={{
-                      width: `${selected.budget > 0 ? Math.round((selected.depense / selected.budget) * 100) : 0}%`,
+                      width: `${selected.budget > 0 ? Math.round((getDepense(selected.id) / selected.budget) * 100) : 0}%`,
                       background: "linear-gradient(90deg,#166534,#4ade80)",
                     }}
                   />
@@ -6888,13 +6890,21 @@ function AdminChantiers({ chantiers, setChantiers, equipes }) {
             <button
               className="btn-g"
               style={{ flex: 1 }}
-              onClick={() => {
-                upd(showUpdate.id, {
-                  avancement: parseInt(upForm.avancement),
-                  depense: parseInt(upForm.depense),
-                  statut: upForm.statut,
-                });
-                setShowUpdate(null);
+              onClick={async () => {
+                try {
+                  await updateChantier(showUpdate.id, {
+                    avancement: parseInt(upForm.avancement),
+                    depense: parseInt(upForm.depense),
+                    statut: upForm.statut,
+                  });
+                  // Recharger depuis Supabase pour avoir les vraies données
+                  const data = await import('./services/chantiers').then(m => m.loadChantiers());
+                  setChantiers(data);
+                  setSelected(data.find(c => c.id === showUpdate.id) || null);
+                  setShowUpdate(null);
+                } catch (err) {
+                  alert('Erreur: ' + err.message);
+                }
               }}
             >
               Enregistrer
@@ -7033,45 +7043,23 @@ function AdminChantiers({ chantiers, setChantiers, equipes }) {
             <button
               className="btn-g"
               style={{ flex: 1 }}
-              onClick={() => {
-                if (!form.nom || !form.budget) return;
-                const eq = form.equipe
-                  ? form.equipe
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  : [];
-                setChantiers((p) => [
-                  ...p,
-                  {
-                    ...form,
-                    id: Date.now(),
-                    budget: parseInt(form.budget) || 0,
-                    depense: 0,
-                    avancement: 0,
-                    clientId: null,
-                    equipe: eq,
-                    photos: [],
-                    rapports: [],
-                    blocages: [],
-                    taches: [],
-                    documents: [],
-                    presences: [],
-                  },
-                ]);
-                setForm({
-                  nom: "",
-                  client: "Orange CI",
-                  statut: "Planifié",
-                  equipe: "",
-                  budget: "",
-                  localisation: "",
-                  type: "Pylône Greenfield",
-                  dateDebut: "",
-                  dateFin: "",
-                });
-                setShowAdd(false);
-              }}
+              onClick={async () => {
+  if (!form.nom || !form.budget) return;
+  try {
+    const nouveau = await createChantier({
+      nom: form.nom,
+      localisation: form.localisation,
+      budget: form.budget,
+      dateDebut: form.dateDebut,
+      dateFin: form.dateFin,
+    }, user.id);
+    setChantiers(p => [nouveau, ...p]);
+    setForm({ nom: "", client: "Orange CI", statut: "Planifié", equipe: "", budget: "", localisation: "", type: "Pylône Greenfield", dateDebut: "", dateFin: "" });
+    setShowAdd(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
+  }
+}}
               disabled={!form.nom || !form.budget}
             >
               Créer
@@ -7085,6 +7073,7 @@ function AdminChantiers({ chantiers, setChantiers, equipes }) {
     </div>
   );
 }
+
 
 // ─── ÉQUIPES ──────────────────────────────────────────────────
 function AdminEquipes({ equipes, setEquipes, chantiers }) {
@@ -10580,7 +10569,7 @@ function AdminIA({
           system: `Tu es l'agent IA de DIGINETS CI, ERP de gestion de chantiers télécom en Côte d'Ivoire. Directeur : ${user.nom}.
 
 CHANTIERS (${chantiers.length}) :
-${chantiers.map((c) => `- ${c.nom} | Client: ${c.client} | Statut: ${c.statut} | Avancement: ${c.avancement}% | Budget: ${c.budget.toLocaleString()} FCFA | Dépensé: ${c.depense.toLocaleString()} FCFA | Fin: ${c.dateFin} | Blocages actifs: ${(c.blocages || []).filter((b) => !b.resolu).length}`).join("\n")}
+${chantiers.map((c) => `- ${c.nom} | Client: ${c.client} | Statut: ${c.statut} | Avancement: ${c.avancement}% | Budget: ${c.budget.toLocaleString()} FCFA | Dépensé: ${getDepense(c.id).toLocaleString()} FCFA | Fin: ${c.dateFin} | Blocages actifs: ${(c.blocages || []).filter((b) => !b.resolu).length}`).join("\n")}
 
 FINANCES :
 - CA encaissé : ${totalCA.toLocaleString()} FCFA
