@@ -3235,18 +3235,6 @@ setChantiers(mapped);
     loadChantiers();
   }, []);
   const [equipes, setEquipes] = useState([]);
-useEffect(() => {
-  async function loadChantiers() {
-    try {
-      const data = await import('./services/chantiers').then(m => m.loadChantiers());
-      setChantiers(data);
-    } catch (err) {
-      console.error(err);
-      setChantiers(CHANTIERS_INIT);
-    }
-  }
-  loadChantiers();
-}, []);
  useEffect(() => {
   async function loadEquipes() {
     try {
@@ -3261,6 +3249,27 @@ useEffect(() => {
     }
   }
   loadEquipes();
+}, []);
+useEffect(() => {
+  const channel = supabase
+    .channel('projects-changes')
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'projects' },
+      payload => {
+        if (payload.eventType === 'INSERT') {
+          setChantiers(p => [mapChantier(payload.new), ...p]);
+        }
+        if (payload.eventType === 'UPDATE') {
+          setChantiers(p => p.map(c => c.id === payload.new.id ? { ...c, ...mapChantier(payload.new) } : c));
+        }
+        if (payload.eventType === 'DELETE') {
+          setChantiers(p => p.filter(c => c.id !== payload.old.id));
+        }
+      }
+    )
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
 }, []);
 
   const [clients, setClients] = useState([]);
