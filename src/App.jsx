@@ -11,7 +11,7 @@ import { createDevis, updateStatutDevis, deleteDevis, mapDevis } from './service
 import { createClient, updateClient, deleteClient, mapClient } from './services/clients';
 import { createContrat, deleteContrat, mapContrat } from './services/contrats';
 import { createEquipement, attribuerEquipement, restituerEquipement } from './services/equipements';
-import { sendMessage, createConversation } from './services/messages';
+import { sendMessage, createConversation, subscribeToConversation, unsubscribeChannel } from './services/messages';
 import { uploadDocument, deleteDocument } from './services/documents';
 // ════════════ DONNÉES ════════════
 
@@ -1324,6 +1324,38 @@ function MsgPanel({
   const [showNew, setShowNew] = useState(false);
   const [newForm, setNewForm] = useState({ nom: "", participants: [] });
   const msgEnd = useRef();
+  const channelRef = useRef(null);
+
+useEffect(() => {
+  if (!activeConv) return;
+  
+  // Désabonner l'ancienne conversation
+  if (channelRef.current) unsubscribeChannel(channelRef.current);
+  
+  // S'abonner à la nouvelle
+  channelRef.current = subscribeToConversation(activeConv.id, (newMsg) => {
+    setActiveConv(p => ({
+      ...p,
+      messages: [...(p?.messages || []), {
+        ...newMsg,
+        auteur: equipes.find(e => e.id === newMsg.sender_id) 
+  ? `${equipes.find(e => e.id === newMsg.sender_id).first_name} ${equipes.find(e => e.id === newMsg.sender_id).last_name}`
+  : newMsg.sender_id,
+        contenu: newMsg.content,
+        urgent: newMsg.is_urgent,
+        lu: false,
+        date: new Date(newMsg.created_at).toLocaleDateString("fr-CI", {
+          day: "2-digit", month: "2-digit", year: "numeric",
+          hour: "2-digit", minute: "2-digit",
+        }),
+      }],
+    }));
+  });
+
+  return () => {
+    if (channelRef.current) unsubscribeChannel(channelRef.current);
+  };
+}, [activeConv?.id]);
 
   useEffect(() => {
     msgEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -1347,7 +1379,6 @@ function MsgPanel({
         c.id === activeConv.id ? { ...c, messages: [...c.messages, msg] } : c,
       ),
     );
-    setActiveConv(p => ({ ...p, messages: [...p.messages, msg] }));
     if (isUrgent) {
       const dest = equipes.find(
         e => e.nom !== user.nom && activeConv.participants.includes(e.nom),
