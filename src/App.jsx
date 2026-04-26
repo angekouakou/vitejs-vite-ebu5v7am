@@ -5374,115 +5374,110 @@ function ChefView({ user, state, onLogout }) {
       )}
 
       {showAddDoc && (
-        <Modal
-          title="Ajouter un document"
-          onClose={() => setShowAddDoc(false)}
-          width={440}
+  <Modal
+    title="Ajouter un document"
+    onClose={() => setShowAddDoc(false)}
+    width={440}
+  >
+    <div className="fg">
+      <label className="lbl">Fichier *</label>
+      <input
+        type="file"
+        className="field"
+        style={{ padding: 8 }}
+        onChange={(e) => setDocForm(f => ({ ...f, file: e.target.files[0], nom: e.target.files[0]?.name || f.nom }))}
+      />
+    </div>
+    <div className="fg">
+      <label className="lbl">Nom du fichier *</label>
+      <input
+        className="field"
+        placeholder="Ex: Rapport avancement avril.pdf"
+        value={docForm.nom}
+        onChange={(e) => setDocForm(f => ({ ...f, nom: e.target.value }))}
+      />
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+      <div className="fg">
+        <label className="lbl">Catégorie</label>
+        <select
+          className="field"
+          value={docForm.categorie}
+          onChange={(e) => setDocForm(f => ({ ...f, categorie: e.target.value }))}
         >
-          <div className="fg">
-            <label className="lbl">Nom du fichier *</label>
-            <input
-              className="field"
-              placeholder="Ex: Rapport avancement avril.pdf"
-              value={docForm.nom}
-              onChange={(e) =>
-                setDocForm((f) => ({ ...f, nom: e.target.value }))
-              }
-            />
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "0 12px",
-            }}
-          >
-            <div className="fg">
-              <label className="lbl">Type</label>
-              <select
-                className="field"
-                value={docForm.type}
-                onChange={(e) =>
-                  setDocForm((f) => ({ ...f, type: e.target.value }))
-                }
-              >
-                {["pdf", "doc", "xlsx", "img"].map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-            <div className="fg">
-              <label className="lbl">Catégorie</label>
-              <select
-                className="field"
-                value={docForm.categorie}
-                onChange={(e) =>
-                  setDocForm((f) => ({ ...f, categorie: e.target.value }))
-                }
-              >
-                {[
-                  "Rapport",
-                  "Plan technique",
-                  "PV / Rapport",
-                  "Procédure",
-                  "Autre",
-                ].map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="fg">
-            <label className="lbl">Description</label>
-            <textarea
-              className="field"
-              style={{ minHeight: 60 }}
-              value={docForm.description}
-              onChange={(e) =>
-                setDocForm((f) => ({ ...f, description: e.target.value }))
-              }
-            />
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              className="btn-g"
-              style={{ flex: 1 }}
-              onClick={() => {
-                if (!docForm.nom) return;
-                const chantier = selected || mesChantiers[0];
-                setDocuments((p) => [
-                  ...p,
-                  {
-                    id: Date.now(),
-                    ...docForm,
-                    chantierId: chantier?.id || null,
-                    chantierNom: chantier?.nom || null,
-                    version: "v1.0",
-                    taille: "—",
-                    uploadePar: user.nom,
-                    dateUpload: todayStr(),
-                    tags: [],
-                    accesRoles: ["admin", "chef"],
-                  },
-                ]);
-                setDocForm({
-                  nom: "",
-                  type: "pdf",
-                  categorie: "Rapport",
-                  description: "",
-                });
-                setShowAddDoc(false);
-              }}
-              disabled={!docForm.nom}
-            >
-              Ajouter
-            </button>
-            <button className="btn-b" onClick={() => setShowAddDoc(false)}>
-              Annuler
-            </button>
-          </div>
-        </Modal>
-      )}
+          {["Rapport", "Plan technique", "PV / Rapport", "Procédure", "Autre"].map(c => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+      <div className="fg">
+        <label className="lbl">Type</label>
+        <select
+          className="field"
+          value={docForm.type}
+          onChange={(e) => setDocForm(f => ({ ...f, type: e.target.value }))}
+        >
+          {["pdf", "doc", "xlsx", "img"].map(t => (
+            <option key={t}>{t}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+    <div className="fg">
+      <label className="lbl">Description</label>
+      <textarea
+        className="field"
+        style={{ minHeight: 60 }}
+        value={docForm.description}
+        onChange={(e) => setDocForm(f => ({ ...f, description: e.target.value }))}
+      />
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button
+        className="btn-g"
+        style={{ flex: 1 }}
+        onClick={async () => {
+          if (!docForm.nom) return;
+          try {
+            const chantier = selected || mesChantiers?.[0];
+            const nouveau = await uploadDocument(
+              docForm.file,
+              { chantierId: chantier?.id || null, categorie: docForm.categorie, description: docForm.description, tags: [], accesRoles: ['admin', 'chef', 'technicien'] },
+              user.id
+            );
+            setDocuments(p => [
+              {
+                ...nouveau,
+                nom: nouveau.name,
+                type: nouveau.file_type,
+                categorie: nouveau.category,
+                chantierId: nouveau.project_id,
+                chantierNom: chantier?.nom || null,
+                uploadePar: user.nom,
+                dateUpload: todayStr(),
+                taille: nouveau.size_bytes ? `${Math.round(nouveau.size_bytes / 1024)} KB` : '—',
+                tags: nouveau.tags || [],
+                accesRoles: nouveau.access_roles || ['admin', 'chef', 'technicien'],
+                version: nouveau.current_version || 'v1.0',
+              },
+              ...(p || []),
+            ]);
+            setDocForm({ nom: '', type: 'pdf', categorie: 'Rapport', description: '', file: null });
+            setShowAddDoc(false);
+          } catch (err) {
+            alert('Erreur: ' + err.message);
+          }
+        }}
+        disabled={!docForm.nom}
+      >
+        Ajouter
+      </button>
+      <button className="btn-b" onClick={() => setShowAddDoc(false)}>
+        Annuler
+      </button>
+    </div>
+  </Modal>
+)}
     </div>
   );
 }
@@ -10374,137 +10369,163 @@ function AdminDocuments({ documents, setDocuments, chantiers, user }) {
                 </span>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn-a">⬇️ Télécharger</button>
-              <button
-                className="btn-r"
-                onClick={() => {
-                  setDocuments((p) =>
-                    (p || []).filter((d) => d.id !== selected.id),
-                  );
-                  setSelected(null);
-                }}
-              >
-                🗑️ Supprimer
-              </button>
-            </div>
+           <div style={{ display: "flex", gap: 8 }}>
+  <a href={selected.storage_url} target="_blank" rel="noopener noreferrer" className="btn-a" style={{textDecoration:"none"}}>
+    ⬇️ Télécharger
+  </a>
+  <button
+    className="btn-r"
+    onClick={async () => {
+      try {
+        await deleteDocument(selected.id, selected.storage_url);
+        setDocuments(p => (p || []).filter(d => d.id !== selected.id));
+        setSelected(null);
+      } catch (err) {
+        alert('Erreur: ' + err.message);
+      }
+    }}
+  >
+    🗑️ Supprimer
+  </button>
+</div>
           </div>
         </div>
       )}
 
       {showAdd && (
-        <Modal title="Ajouter un document" onClose={() => setShowAdd(false)}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "0 12px",
-            }}
-          >
-            <div className="fg" style={{ gridColumn: "1/-1" }}>
-              <label className="lbl">Nom du fichier *</label>
-              <input
-                className="field"
-                placeholder="Ex: Plan installation BTS.pdf"
-                value={form.nom}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, nom: e.target.value }))
-                }
-              />
-            </div>
-            <div className="fg">
-              <label className="lbl">Type</label>
-              <select
-                className="field"
-                value={form.type}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, type: e.target.value }))
-                }
-              >
-                {["pdf", "doc", "xlsx", "dwg", "img", "zip"].map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-            <div className="fg">
-              <label className="lbl">Catégorie</label>
-              <select
-                className="field"
-                value={form.categorie}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, categorie: e.target.value }))
-                }
-              >
-                {CATS.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div className="fg">
-              <label className="lbl">Version</label>
-              <input
-                className="field"
-                value={form.version}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, version: e.target.value }))
-                }
-              />
-            </div>
-            <div className="fg">
-              <label className="lbl">Chantier (optionnel)</label>
-              <select
-                className="field"
-                value={form.chantierId}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, chantierId: e.target.value }))
-                }
-              >
-                <option value="">Document général</option>
-                {(chantiers || []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nom}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="fg" style={{ gridColumn: "1/-1" }}>
-              <label className="lbl">Description</label>
-              <textarea
-                className="field"
-                style={{ minHeight: 60 }}
-                value={form.description}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, description: e.target.value }))
-                }
-              />
-            </div>
-            <div className="fg" style={{ gridColumn: "1/-1" }}>
-              <label className="lbl">Tags (séparés par virgule)</label>
-              <input
-                className="field"
-                placeholder="Ex: plan, BTS, Orange CI"
-                value={form.tags}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, tags: e.target.value }))
-                }
-              />
-            </div>
+  <Modal title="Ajouter un document" onClose={() => setShowAdd(false)}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px" }}>
+      <div className="fg" style={{ gridColumn: "1/-1" }}>
+        <label className="lbl">Fichier *</label>
+        <input
+          type="file"
+          className="field"
+          style={{ padding: 8 }}
+          onChange={(e) => setForm(f => ({
+            ...f,
+            file: e.target.files[0],
+            nomFichierReel: e.target.files[0]?.name || '',
+            nom: e.target.files[0]?.name || f.nom,
+            type: e.target.files[0]?.name.split('.').pop() || f.type,
+          }))}
+        />
+      </div>
+      <div className="fg" style={{ gridColumn: "1/-1" }}>
+        <label className="lbl">Nom du fichier *</label>
+        <input
+          className="field"
+          placeholder="Ex: Plan installation BTS.pdf"
+          value={form.nom}
+          onChange={(e) => setForm(f => ({ ...f, nom: e.target.value }))}
+        />
+        {form.nomFichierReel && form.nomFichierReel !== form.nom && (
+          <div style={{ fontSize: 11, color: "#4a6a4d", marginTop: 4 }}>
+            Fichier : {form.nomFichierReel}
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              className="btn-g"
-              style={{ flex: 1 }}
-              onClick={addDoc}
-              disabled={!form.nom}
-            >
-              Ajouter
-            </button>
-            <button className="btn-b" onClick={() => setShowAdd(false)}>
-              Annuler
-            </button>
-          </div>
-        </Modal>
-      )}
+        )}
+      </div>
+      <div className="fg">
+        <label className="lbl">Catégorie</label>
+        <select
+          className="field"
+          value={form.categorie}
+          onChange={(e) => setForm(f => ({ ...f, categorie: e.target.value }))}
+        >
+          {CATS.map(c => <option key={c}>{c}</option>)}
+        </select>
+      </div>
+      <div className="fg">
+        <label className="lbl">Version</label>
+        <input
+          className="field"
+          value={form.version}
+          onChange={(e) => setForm(f => ({ ...f, version: e.target.value }))}
+        />
+      </div>
+      <div className="fg" style={{ gridColumn: "1/-1" }}>
+        <label className="lbl">Chantier (optionnel)</label>
+        <select
+          className="field"
+          value={form.chantierId}
+          onChange={(e) => setForm(f => ({ ...f, chantierId: e.target.value }))}
+        >
+          <option value="">Document général</option>
+          {(chantiers || []).map(c => (
+            <option key={c.id} value={c.id}>{c.nom}</option>
+          ))}
+        </select>
+      </div>
+      <div className="fg" style={{ gridColumn: "1/-1" }}>
+        <label className="lbl">Description</label>
+        <textarea
+          className="field"
+          style={{ minHeight: 60 }}
+          value={form.description}
+          onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
+        />
+      </div>
+      <div className="fg" style={{ gridColumn: "1/-1" }}>
+        <label className="lbl">Tags (séparés par virgule)</label>
+        <input
+          className="field"
+          placeholder="Ex: plan, BTS, Orange CI"
+          value={form.tags}
+          onChange={(e) => setForm(f => ({ ...f, tags: e.target.value }))}
+        />
+      </div>
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button
+        className="btn-g"
+        style={{ flex: 1 }}
+        onClick={async () => {
+  if (!form.nom) return;
+  try {
+    const chantier = (chantiers || []).find(c => c.id === form.chantierId);
+    const nouveau = await uploadDocument(
+      form.file,
+      {
+        nom: form.nom,
+        chantierId: form.chantierId || null,
+        categorie: form.categorie,
+        type: form.type,
+        version: form.version,
+        description: form.description,
+        tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        accesRoles: ['admin', 'chef', 'technicien'],
+      },
+      user.id
+    );
+    setDocuments(p => [{
+      ...nouveau,
+      nom: form.nom,
+      type: nouveau.file_type,
+      categorie: nouveau.category,
+      chantierId: nouveau.project_id,
+      chantierNom: chantier?.nom || null,
+      uploadePar: user.nom,
+      dateUpload: todayStr(),
+      taille: nouveau.size_bytes ? `${Math.round(nouveau.size_bytes / 1024)} KB` : '—',
+      tags: nouveau.tags || [],
+      accesRoles: nouveau.access_roles || ['admin', 'chef', 'technicien'],
+      version: nouveau.current_version || form.version,
+    }, ...(p || [])]);
+    setForm({ nom: '', type: 'pdf', categorie: 'Plan technique', chantierId: '', description: '', tags: '', version: 'v1.0', file: null });
+    setShowAdd(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
+  }
+}}
+        disabled={!form.nom}
+      >
+        Ajouter
+      </button>
+      <button className="btn-b" onClick={() => setShowAdd(false)}>
+        Annuler
+      </button>
+    </div>
+  </Modal>
+)}
     </div>
   );
 }
