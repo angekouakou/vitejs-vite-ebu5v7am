@@ -2078,17 +2078,24 @@ function TechnicienView({ user, state, onLogout }) {
     });
   }
 
-  function submitRapport() {
-    if (!rptForm.travaux) return;
+  async function submitRapport() {
+  if (!rptForm.travaux) return;
+  try {
+    const nouveau = await soumettreRapport(selected.id, rptForm, null);
     upd(selected.id, {
-      rapports: [
-        ...(selected.rapports || []),
-        { ...rptForm, id: Date.now(), date: nowStr(), technicien: user.nom },
-      ],
+      rapports: [...(selected.rapports || []), {
+        ...rptForm,
+        id: nouveau.id,
+        date: nowStr(),
+        technicien: user.nom,
+      }]
     });
     setRptForm({ travaux: "", problemes: "", materiel: "", remarques: "" });
     setShowRapport(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   async function submitBlocage() {
   if (!blcForm.description) return;
@@ -3238,7 +3245,8 @@ useEffect(() => {
         return;
       }
 
-      const fmtDate = (d) =>
+      const mapped = (data || []).map(f => mapFacture(f));
+setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
         d
           ? new Date(d).toLocaleDateString("fr-CI", {
               day: "2-digit",
@@ -3246,20 +3254,6 @@ useEffect(() => {
               year: "numeric",
             })
           : "N/A";
-
-      const mapped = (data || []).map((f) => ({
-        ...f,
-        numero: f.reference,
-        clientNom: f.clients?.name || "",
-        objet: f.subject,
-        montantHT: f.amount_ht,
-        montantTTC: f.amount_ttc,
-        statut: f.status,
-        dateEmission: fmtDate(f.issued_at),
-        dateEcheance: fmtDate(f.due_date),
-        datePaiement: fmtDate(f.paid_at),
-        paiements: f.payments || [],
-      }));
 
       setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
     }
@@ -8311,13 +8305,13 @@ function AdminFactures({ factures, setFactures, clients }) {
     date: todayStr(),
   });
   const [form, setForm] = useState({
-    clientId: (clients || [])[0]?.id || 1,
-    clientNom: (clients || [])[0]?.nom || "",
-    objet: "",
-    montantHT: "",
-    tva: 18,
-    dateEcheance: "",
-  });
+  clientId: (clients || [])[0]?.id || '',
+  clientNom: (clients || [])[0]?.nom || (clients || [])[0]?.name || '',
+  objet: '',
+  montantHT: '',
+  tva: 18,
+  dateEcheance: '',
+});
 
   const retards = (factures || []).filter(
     (f) => f.statut !== "Payée" && joursRestants(f.dateEcheance) < 0,
@@ -8329,40 +8323,33 @@ function AdminFactures({ factures, setFactures, clients }) {
     .filter((f) => f.statut !== "Payée" && f.statut !== "paid")
     .reduce((s, f) => s + f.montantTTC, 0);
 
-  function ajouterPaiement() {
-    if (!pForm.montant || !showPaiement) return;
-    const montant = parseInt(pForm.montant);
-    const facture = (factures || []).find((f) => f.id === showPaiement.id);
-    const totalPaye =
-      (facture.paiements || []).reduce((s, p) => s + p.montant, 0) + montant;
-    const statut = totalPaye >= facture.montantTTC ? "Payée" : "Partielle";
-    const newP = { ...pForm, id: Date.now(), montant };
-    setFactures((p) =>
-      (p || []).map((f) =>
-        f.id === showPaiement.id
-          ? {
-              ...f,
-              paiements: [...(f.paiements || []), newP],
-              statut,
-              datePaiement: statut === "Payée" ? todayStr() : null,
-            }
-          : f,
-      ),
-    );
-    if (selected?.id === showPaiement.id)
-      setSelected((p) => ({
-        ...p,
-        paiements: [...(p.paiements || []), newP],
-        statut,
-      }));
-    setPForm({
-      montant: "",
-      mode: "Virement bancaire",
-      ref: "",
-      date: todayStr(),
-    });
+  async function ajouterPaiement() {
+  if (!pForm.montant || !showPaiement) return;
+  try {
+    await enregistrerPaiement(showPaiement.id, {
+      montant: pForm.montant,
+      mode: pForm.mode,
+      ref: pForm.ref,
+      date: pForm.date,
+    }, null);
+
+    // Recharger la facture depuis Supabase
+    const { data } = await supabase
+      .from('invoices')
+      .select('*, payments(*), clients(name)')
+      .eq('id', showPaiement.id)
+      .single();
+
+    const mapped = mapFacture(data);
+    setFactures(p => (p || []).map(f => f.id === showPaiement.id ? mapped : f));
+    if (selected?.id === showPaiement.id) setSelected(mapped);
+
+    setPForm({ montant: "", mode: "Virement bancaire", ref: "", date: todayStr() });
     setShowPaiement(null);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   function relancer(f) {
     const c = (clients || []).find((x) => x.id === f.clientId);
@@ -8779,18 +8766,18 @@ function AdminFactures({ factures, setFactures, clients }) {
               value={form.clientId}
               onChange={(e) => {
                 const c = (clients || []).find(
-                  (x) => x.id === parseInt(e.target.value),
+                  (x) => x.id === e.target.value
                 );
                 setForm((f) => ({
                   ...f,
-                  clientId: parseInt(e.target.value),
-                  clientNom: c?.nom || "",
+                  clientId: e.target.value,
+                  clientNom: c?.nom || c?.name || "",
                 }));
               }}
             >
               {(clients || []).map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.nom}
+                  {c.nom || c.name}
                 </option>
               ))}
             </select>
@@ -8867,36 +8854,22 @@ function AdminFactures({ factures, setFactures, clients }) {
             <button
               className="btn-g"
               style={{ flex: 1 }}
-              onClick={() => {
+              onClick={async () => {
                 if (!form.objet || !form.montantHT) return;
-                const ht = parseInt(form.montantHT);
-                const ttc = Math.round(ht * (1 + form.tva / 100));
-                const num = `FAC-2025-${String((factures || []).length + 1).padStart(3, "0")}`;
-                setFactures((p) => [
-                  ...(p || []),
-                  {
-                    ...form,
-                    id: Date.now(),
-                    numero: num,
-                    montantHT: ht,
-                    montantTTC: ttc,
-                    statut: "En attente",
-                    dateEmission: todayStr(),
-                    datePaiement: null,
-                    paiements: [],
-                    devisId: null,
-                    chantierId: null,
-                  },
-                ]);
-                setForm({
-                  clientId: (clients || [])[0]?.id || 1,
-                  clientNom: (clients || [])[0]?.nom || "",
-                  objet: "",
-                  montantHT: "",
-                  tva: 18,
-                  dateEcheance: "",
-                });
-                setShowAdd(false);
+                try {
+                  const nouvelle = await createFacture({
+                    clientId: form.clientId,
+                    objet: form.objet,
+                    montantHT: form.montantHT,
+                    tva: form.tva,
+                    dateEcheance: form.dateEcheance,
+                  }, null);
+                  setFactures(p => [...(p || []), nouvelle]);
+                  setForm({ clientId: (clients || [])[0]?.id || 1, clientNom: (clients || [])[0]?.nom || "", objet: "", montantHT: "", tva: 18, dateEcheance: "" });
+                  setShowAdd(false);
+                } catch (err) {
+                  alert('Erreur: ' + err.message);
+                }
               }}
               disabled={!form.objet || !form.montantHT}
             >
