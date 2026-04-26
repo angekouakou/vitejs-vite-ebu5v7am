@@ -2009,9 +2009,7 @@ function TechnicienView({ user, state, onLogout }) {
     setConversations,
     equipes,
   } = state;
-  const mesMissions = chantiers.filter((c) =>
-    c.equipe.some((m) => m.includes(user.nom.split(" ")[0])),
-  );
+  const mesMissions = chantiers; // temporaire jusqu'à Supabase Auth
   const [tab, setTab] = useState("missions");
   const [selected, setSelected] = useState(null);
   const [detailTab, setDetailTab] = useState("infos");
@@ -2092,51 +2090,66 @@ function TechnicienView({ user, state, onLogout }) {
     setShowRapport(false);
   }
 
-  function submitBlocage() {
-    if (!blcForm.description) return;
+  async function submitBlocage() {
+  if (!blcForm.description) return;
+  try {
+    const nouveau = await signalerBlocage(selected.id, blcForm, null);
     upd(selected.id, {
-      blocages: [
-        ...(selected.blocages || []),
-        {
-          ...blcForm,
-          id: Date.now(),
-          date: nowStr(),
-          technicien: user.nom,
-          resolu: false,
-        },
-      ],
+      blocages: [...(selected.blocages || []), {
+        id: nouveau.id,
+        type: blcForm.type,
+        description: blcForm.description,
+        resolu: false,
+        date: nowStr(),
+        technicien: user.nom,
+      }]
     });
     setBlcForm({ type: "Matériel manquant", description: "" });
     setShowBlocage(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
-  function pointer(type) {
-    const presences = [...(selected.presences || [])];
-    const auj = presences.find(
-      (p) => p.date === todayStr() && p.technicien === user.nom,
-    );
-    if (type === "arrivee" && !auj)
-      presences.push({
-        technicien: user.nom,
-        date: todayStr(),
-        arrivee: new Date().toLocaleTimeString("fr-CI", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        depart: null,
+  async function pointer(type) {
+  try {
+    if (type === "arrivee") {
+      const presence = await pointerArrivee(null, selected.id);
+      upd(selected.id, {
+        presences: [...(selected.presences || []), {
+          id: presence.id,
+          technicien: user.nom,
+          date: todayStr(),
+          arrivee: new Date(presence.arrived_at).toLocaleTimeString("fr-CI", { hour: "2-digit", minute: "2-digit" }),
+          depart: null,
+        }]
       });
-    else if (type === "depart" && auj && !auj.depart) {
-      const i = presences.indexOf(auj);
-      presences[i] = {
-        ...auj,
-        depart: new Date().toLocaleTimeString("fr-CI", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      };
-    }
-    upd(selected.id, { presences });
+    } else if (type === "depart") {
+        const today = new Date().toISOString().split('T')[0];
+        const { data: presence } = await supabase
+          .from('presences')
+          .select('id, departed_at')
+          .eq('project_id', selected.id)
+          .eq('work_date', today)
+          .is('departed_at', null)
+          .single();
+
+        if (presence) {
+          await pointerDepart(presence.id);
+          upd(selected.id, {
+            presences: (selected.presences || []).map(p =>
+              p.date === todayStr() && p.technicien === user.nom ? {
+                ...p,
+                depart: new Date().toLocaleTimeString("fr-CI", { hour: "2-digit", minute: "2-digit" })
+              } : p
+            )
+          });
+        }
+      }
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   const pointageAuj = selected?.presences?.find(
     (p) => p.date === todayStr() && p.technicien === user.nom,
@@ -6118,14 +6131,19 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
     setChantiers((p) => p.map((c) => (c.id === id ? { ...c, ...patch } : c)));
     if (selected?.id === id) setSelected((p) => ({ ...p, ...patch }));
   }
-  function resoudre(cId, bId) {
-    const c = chantiers.find((x) => x.id === cId);
+  async function resoudre(cId, bId) {
+  try {
+    await resoudreBlocage(bId, null, null);
+    const c = chantiers.find(x => x.id === cId);
     upd(cId, {
-      blocages: c.blocages.map((b) =>
-        b.id === bId ? { ...b, resolu: true } : b,
+      blocages: c.blocages.map(b =>
+        b.id === bId ? { ...b, resolu: true } : b
       ),
     });
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
   function handlePhoto(e) {
     if (!selected) return;
     Array.from(e.target.files).forEach((file) => {
@@ -6453,15 +6471,18 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
                 <div
                   key={t.id}
                   className="trow"
-                  onClick={() => {
-                    const taches = selected.taches.map((x) =>
-                      x.id === t.id ? { ...x, done: !x.done } : x,
-                    );
-                    const av = Math.round(
-                      (taches.filter((x) => x.done).length / taches.length) *
-                        100,
-                    );
-                    upd(selected.id, { taches, avancement: av });
+                  onClick={async () => {
+                    try {
+                      await toggleTache(t.id, !t.done, null);
+                      const taches = selected.taches.map(x =>
+                        x.id === t.id ? { ...x, done: !x.done } : x
+                      );
+                      const av = Math.round((taches.filter(x => x.done).length / taches.length) * 100);
+                      upd(selected.id, { taches, avancement: av });
+                      await updateChantier(selected.id, { avancement: av });
+                    } catch (err) {
+                      alert('Erreur: ' + err.message);
+                    }
                   }}
                 >
                   <div className={`tcheck ${t.done ? "done" : ""}`}>
@@ -6875,17 +6896,6 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
               }
             />
           </div>
-          <div className="fg">
-            <label className="lbl">Dépenses (FCFA)</label>
-            <input
-              type="number"
-              className="field"
-              value={upForm.depense}
-              onChange={(e) =>
-                setUpForm((f) => ({ ...f, depense: e.target.value }))
-              }
-            />
-          </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button
               className="btn-g"
@@ -6894,7 +6904,6 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
                 try {
                   await updateChantier(showUpdate.id, {
                     avancement: parseInt(upForm.avancement),
-                    depense: parseInt(upForm.depense),
                     statut: upForm.statut,
                   });
                   // Recharger depuis Supabase pour avoir les vraies données

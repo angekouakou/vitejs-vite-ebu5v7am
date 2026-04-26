@@ -1,7 +1,7 @@
+import { supabase } from '../supabase';
 // ═══════════════════════════════════════
 // taches.js
 // ═══════════════════════════════════════
-import { supabase } from '../supabase';
 
 export async function createTache(projectId, label) {
   const { data, error } = await supabase
