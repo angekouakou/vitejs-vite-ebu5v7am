@@ -3206,7 +3206,8 @@ useEffect(() => {
         console.error(error);
         setClients(CLIENTS_INIT);
       } else {
-        setClients(data.length > 0 ? data : CLIENTS_INIT);
+        const mapped = (data || []).map(c => mapClient(c));
+        setClients(mapped.length > 0 ? mapped : CLIENTS_INIT);
       }
     }
     load();
@@ -3248,15 +3249,6 @@ useEffect(() => {
 
       const mapped = (data || []).map(f => mapFacture(f));
 setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
-        d
-          ? new Date(d).toLocaleDateString("fr-CI", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-            })
-          : "N/A";
-
-      setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
     }
     load();
   }, []);
@@ -7441,7 +7433,7 @@ function AdminClients({ clients, setClients, devis, factures }) {
               }}
             >
               {[
-                ["CA total", fmt(selected.chiffreAffaires), "#4ade80"],
+                ["CA total", fmt((factures || []).filter(f => (f.client_id === selected.id || f.clientId === selected.id) && (f.statut === 'paid' || f.statut === 'Payée')).reduce((s, f) => s + (f.montantTTC || f.amount_ttc || 0), 0)), "🟢#4ade80"],
                 [
                   "Devis",
                   (devis || []).filter((d) => d.clientId === selected.id)
@@ -7584,29 +7576,16 @@ function AdminClients({ clients, setClients, devis, factures }) {
             <button
               className="btn-g"
               style={{ flex: 1 }}
-              onClick={() => {
+              onClick={async () => {
                 if (!form.nom) return;
-                setClients((p) => [
-                  ...p,
-                  {
-                    ...form,
-                    id: Date.now(),
-                    chiffreAffaires: 0,
-                    dateCreation: todayStr(),
-                  },
-                ]);
-                setForm({
-                  nom: "",
-                  secteur: "Télécom",
-                  statut: "Actif",
-                  contact: "",
-                  email: "",
-                  tel: "",
-                  adresse: "",
-                  ville: "Abidjan",
-                  notes: "",
-                });
-                setShowAdd(false);
+                try {
+                  const nouveau = await createClient(form, null);
+                  setClients(p => [...(p || []), nouveau]);
+                  setForm({ nom: "", secteur: "Télécom", statut: "Actif", contact: "", email: "", tel: "", adresse: "", ville: "Abidjan", notes: "" });
+                  setShowAdd(false);
+                } catch (err) {
+                  alert('Erreur: ' + err.message);
+                }
               }}
               disabled={!form.nom}
             >
@@ -8879,7 +8858,7 @@ function AdminFactures({ factures, setFactures, clients }) {
 function AdminContrats({ contrats, setContrats, clients }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({
-    clientId: (clients || [])[0]?.id || 1,
+    clientId: (clients || [])[0]?.id || '',
     clientNom: (clients || [])[0]?.nom || "",
     type: "Contrat cadre",
     objet: "",
@@ -9006,18 +8985,18 @@ function AdminContrats({ contrats, setContrats, clients }) {
               value={form.clientId}
               onChange={(e) => {
                 const c = (clients || []).find(
-                  (x) => x.id === parseInt(e.target.value),
+                  (x) => x.id === e.target.value,
                 );
                 setForm((f) => ({
                   ...f,
-                  clientId: parseInt(e.target.value),
-                  clientNom: c?.nom || "",
+                  clientId: e.target.value,
+                  clientNom: c?.nom || c?.name || "",
                 }));
               }}
             >
               {(clients || []).map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.nom}
+                  {c.nom || c.name}
                 </option>
               ))}
             </select>
@@ -9134,32 +9113,32 @@ function AdminContrats({ contrats, setContrats, clients }) {
             <button
               className="btn-g"
               style={{ flex: 1 }}
-              onClick={() => {
+              onClick={async () => {
                 if (!form.objet || !form.valeur) return;
-                const num = `CTR-2025-${String((contrats || []).length + 1).padStart(3, "0")}`;
-                setContrats((p) => [
-                  ...(p || []),
-                  {
-                    ...form,
-                    id: Date.now(),
-                    numero: num,
-                    valeur: parseInt(form.valeur) || 0,
-                    statut: "Actif",
-                  },
-                ]);
-                setForm({
-                  clientId: (clients || [])[0]?.id || 1,
-                  clientNom: (clients || [])[0]?.nom || "",
-                  type: "Contrat cadre",
-                  objet: "",
-                  valeur: "",
-                  dateDebut: "",
-                  dateFin: "",
-                  renouvellement: "Manuel",
-                  periodicite: "Annuel",
-                  notes: "",
-                });
-                setShowAdd(false);
+                try {
+                  console.log('clientId:', form.clientId);
+                  const nouveau = await createContrat({
+                    clientId: form.clientId,
+                    type: form.type,
+                    objet: form.objet,
+                    valeur: form.valeur,
+                    dateDebut: form.dateDebut,
+                    dateFin: form.dateFin,
+                    renouvellement: form.renouvellement,
+                    periodicite: form.periodicite,
+                    notes: form.notes,
+                  }, null);
+                  setContrats(p => [...(p || []), nouveau]);
+                  setForm({
+                    clientId: (clients || [])[0]?.id || '',
+                    clientNom: (clients || [])[0]?.nom || (clients || [])[0]?.name || '',
+                    type: "Contrat cadre", objet: "", valeur: "", dateDebut: "", dateFin: "",
+                    renouvellement: "Manuel", periodicite: "Annuel", notes: "",
+                  });
+                  setShowAdd(false);
+                } catch (err) {
+                  alert('Erreur: ' + err.message);
+                }
               }}
               disabled={!form.objet || !form.valeur}
             >
@@ -9199,6 +9178,11 @@ function AdminStocks({
     valeur: "",
     notes: "",
   });
+  useEffect(() => {
+  if (clients?.length > 0) {
+    setForm(f => ({ ...f, clientId: clients[0].id, clientNom: clients[0].nom || clients[0].name || '' }));
+  }
+}, [clients]);
   const [attrForm, setAttrForm] = useState({
     equipementId: (equipements || [])[0]?.id || 1,
     quantite: 1,
