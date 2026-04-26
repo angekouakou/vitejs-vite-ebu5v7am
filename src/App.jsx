@@ -11,7 +11,7 @@ import { createDevis, updateStatutDevis, deleteDevis, mapDevis } from './service
 import { createClient, updateClient, deleteClient, mapClient } from './services/clients';
 import { createContrat, deleteContrat, mapContrat } from './services/contrats';
 import { createEquipement, attribuerEquipement, restituerEquipement } from './services/equipements';
-import { sendMessage } from './services/messages';
+import { sendMessage, createConversation } from './services/messages';
 import { uploadDocument, deleteDocument } from './services/documents';
 // ════════════ DONNÉES ════════════
 
@@ -1329,10 +1329,12 @@ function MsgPanel({
     msgEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeConv, conversations]);
 
-  function sendMsg() {
-    if (!msgText.trim() || !activeConv) return;
+  async function sendMsg() {
+  if (!msgText.trim() || !activeConv) return;
+  try {
+    const data = await sendMessage(activeConv.id, user.id, msgText.trim(), isUrgent);
     const msg = {
-      id: Date.now(),
+      ...data,
       auteur: user.nom,
       role: user.role,
       contenu: msgText.trim(),
@@ -1340,25 +1342,25 @@ function MsgPanel({
       urgent: isUrgent,
       lu: false,
     };
-    setConversations((p) =>
-      p.map((c) =>
+    setConversations(p =>
+      p.map(c =>
         c.id === activeConv.id ? { ...c, messages: [...c.messages, msg] } : c,
       ),
     );
-    setActiveConv((p) => ({ ...p, messages: [...p.messages, msg] }));
+    setActiveConv(p => ({ ...p, messages: [...p.messages, msg] }));
     if (isUrgent) {
       const dest = equipes.find(
-        (e) => e.nom !== user.nom && activeConv.participants.includes(e.nom),
+        e => e.nom !== user.nom && activeConv.participants.includes(e.nom),
       );
       if (dest?.tel)
-        whatsapp(
-          dest.tel,
-          `[URGENT DIGINETS] ${activeConv.nom}\n${msgText.trim()}`,
-        );
+        whatsapp(dest.tel, `[URGENT DIGINETS] ${activeConv.nom}\n${msgText.trim()}`);
     }
     setMsgText("");
     setIsUrgent(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   function markRead(id) {
     setConversations((p) =>
@@ -1698,109 +1700,121 @@ function MsgPanel({
         </div>
       )}
       {showNew && (
-        <Modal
-          title="Nouvelle conversation"
-          onClose={() => setShowNew(false)}
-          width={400}
-        >
-          <div className="fg">
-            <label className="lbl">Nom *</label>
-            <input
-              className="field"
-              value={newForm.nom}
-              onChange={(e) =>
-                setNewForm((f) => ({ ...f, nom: e.target.value }))
-              }
-            />
-          </div>
-          <div className="fg">
-            <label className="lbl">Participants</label>
-            {equipes.map((e) => (
-              <div
-                key={e.id}
-                onClick={() =>
-                  setNewForm((f) => ({
-                    ...f,
-                    participants: f.participants.includes(e.nom)
-                      ? f.participants.filter((p) => p !== e.nom)
-                      : [...f.participants, e.nom],
-                  }))
-                }
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 12px",
-                  background: newForm.participants.includes(e.nom)
-                    ? "#1a3a2a"
-                    : "#0d1610",
-                  borderRadius: 8,
-                  marginBottom: 4,
-                  cursor: "pointer",
-                  border: `1px solid ${newForm.participants.includes(e.nom) ? "#2d5a30" : "#1a2e1d"}`,
-                }}
-              >
-                <div
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: 3,
-                    border: `2px solid ${newForm.participants.includes(e.nom) ? "#4ade80" : "#2d5a30"}`,
-                    background: newForm.participants.includes(e.nom)
-                      ? "#4ade80"
-                      : "transparent",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {newForm.participants.includes(e.nom) && (
-                    <span
-                      style={{ color: "#0a0f0d", fontSize: 9, fontWeight: 700 }}
-                    >
-                      ✓
-                    </span>
-                  )}
-                </div>
-                <span style={{ fontSize: 13, color: "#d4e8d6" }}>{e.nom}</span>
-                <span style={{ fontSize: 11, color: "#4a6a4d" }}>
-                  {e.poste}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              className="btn-g"
-              style={{ flex: 1 }}
-              onClick={() => {
-                if (!newForm.nom) return;
-                setConversations((p) => [
-                  ...p,
-                  {
-                    id: Date.now(),
-                    type: "direct",
-                    nom: newForm.nom,
-                    avatar: "💬",
-                    participants: [
-                      ...new Set([user.nom, ...newForm.participants]),
-                    ],
-                    messages: [],
-                  },
-                ]);
-                setNewForm({ nom: "", participants: [] });
-                setShowNew(false);
+  <Modal
+    title="Nouvelle conversation"
+    onClose={() => setShowNew(false)}
+    width={400}
+  >
+    <div className="fg">
+      <label className="lbl">Nom *</label>
+      <input
+        className="field"
+        value={newForm.nom}
+        onChange={(e) =>
+          setNewForm((f) => ({ ...f, nom: e.target.value }))
+        }
+      />
+    </div>
+    <div className="fg">
+      <label className="lbl">Participants</label>
+      {equipes.map((e) => {
+        const nomComplet = `${e.first_name} ${e.last_name}`;
+        return (
+          <div
+            key={e.id}
+            onClick={async () => {
+  if (!newForm.nom) return;
+  try {
+    // Trouver les UUIDs des participants sélectionnés
+    const participantIds = equipes
+      .filter(e => newForm.participants.includes(`${e.first_name} ${e.last_name}`))
+      .map(e => e.id);
+    
+    const conv = await createConversation(newForm.nom, 'direct', participantIds);
+    setConversations(p => [
+      ...p,
+      {
+        ...conv,
+        nom: conv.name,
+        avatar: "💬",
+        participants: newForm.participants,
+        messages: [],
+      },
+    ]);
+    setNewForm({ nom: "", participants: [] });
+    setShowNew(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
+  }
+}}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 12px",
+              background: newForm.participants.includes(nomComplet) ? "#1a3a2a" : "#0d1610",
+              borderRadius: 8,
+              marginBottom: 4,
+              cursor: "pointer",
+              border: `1px solid ${newForm.participants.includes(nomComplet) ? "#2d5a30" : "#1a2e1d"}`,
+            }}
+          >
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 3,
+                border: `2px solid ${newForm.participants.includes(nomComplet) ? "#4ade80" : "#2d5a30"}`,
+                background: newForm.participants.includes(nomComplet) ? "#4ade80" : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-              disabled={!newForm.nom}
             >
-              Créer
-            </button>
-            <button className="btn-b" onClick={() => setShowNew(false)}>
-              Annuler
-            </button>
+              {newForm.participants.includes(nomComplet) && (
+                <span style={{ color: "#0a0f0d", fontSize: 9, fontWeight: 700 }}>
+                  ✓
+                </span>
+              )}
+            </div>
+            <span style={{ fontSize: 13, color: "#d4e8d6" }}>{nomComplet}</span>
+            <span style={{ fontSize: 11, color: "#4a6a4d" }}>{e.email}</span>
           </div>
-        </Modal>
-      )}
+        );
+      })}
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button
+        className="btn-g"
+        style={{ flex: 1 }}
+        onClick={() => {
+          if (!newForm.nom) return;
+          setConversations((p) => [
+            ...p,
+            {
+              id: Date.now(),
+              type: "direct",
+              nom: newForm.nom,
+              avatar: "💬",
+              participants: [
+                ...new Set([user.nom, ...newForm.participants]),
+              ],
+              messages: [],
+            },
+          ]);
+          setNewForm({ nom: "", participants: [] });
+          setShowNew(false);
+        }}
+        disabled={!newForm.nom}
+      >
+        Créer
+      </button>
+      <button className="btn-b" onClick={() => setShowNew(false)}>
+        Annuler
+      </button>
+    </div>
+  </Modal>
+)}
     </div>
   );
 }
@@ -1812,10 +1826,19 @@ function LoginPage({ onLogin }) {
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
   const [showQ, setShowQ] = useState(false);
-  function login() {
-    const u = USERS.find((u) => u.email === email && u.password === pass);
-    u ? onLogin(u) : setErr("Email ou mot de passe incorrect");
-  }
+  async function login() {
+  const u = USERS.find((u) => u.email === email && u.password === pass);
+  if (!u) { setErr("Email ou mot de passe incorrect"); return; }
+  
+  // Récupérer le vrai UUID depuis Supabase
+  const { data } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', email)
+    .single();
+  
+  onLogin({ ...u, id: data?.id || u.id });
+}
   return (
     <div
       style={{
@@ -3418,7 +3441,7 @@ setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
   if (!user) return;
   const { data, error } = await supabase
         .from("conversations")
-        .select("*, messages(*), conversation_members(user_id)")
+        .select("*, messages(*, users!messages_sender_id_fkey(first_name, last_name)), conversation_members(user_id, users(first_name, last_name))")
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
@@ -3432,10 +3455,12 @@ setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
         ...c,
         nom: c.name,
         avatar: c.type === "project" ? "📡" : c.type === "team" ? "👔" : "💬",
-        participants: (c.conversation_members || []).map((m) => m.user_id),
+        participants: (c.conversation_members || []).map((m) => 
+  m.users ? `${m.users.first_name} ${m.users.last_name}` : m.user_id
+),
         messages: (c.messages || []).map((m) => ({
           ...m,
-          auteur: m.sender_id,
+          auteur: m.users ? `${m.users.first_name} ${m.users.last_name}` : m.sender_id,
           contenu: m.content,
           urgent: m.is_urgent,
           lu: (m.read_by || []).includes(user?.id),
@@ -3449,7 +3474,7 @@ setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
         })),
       }));
 
-      setConversations(mapped.length > 0 ? mapped : CONVERSATIONS_INIT);
+      setConversations(mapped);
     }
     load();
   }, [user]);
@@ -9284,18 +9309,17 @@ function AdminStocks({
       quantiteDispo: eq.quantiteDisponible,
     }, null);
     setAttributions(p => [
-  ...(p || []),
-  {
-    ...data,
-    equipementId: attrForm.equipementId,
-    equipementNom: eq.nom,
-    chantierNom: chantier?.nom || "",
-    dateAttribution: todayStr(),
-    dateRetour: null,
-    etatDepart: "Bon",
-    etatRetour: null,
-  },
-]);
+      ...(p || []),
+      {
+        ...data,
+        equipementNom: eq.nom,
+        chantierNom: chantier?.nom || "",
+        dateAttribution: todayStr(),
+        dateRetour: null,
+        etatDepart: "Bon",
+        etatRetour: null,
+      },
+    ]);
     setEquipements(p =>
       (p || []).map(e =>
         e.id === eq.id

@@ -33,6 +33,22 @@ export function subscribeToConversation(conversationId, onMessage) {
     .subscribe();
 }
 
+export async function createConversation(nom, type, participantIds) {
+  const { data, error } = await supabase
+    .from('conversations')
+    .insert({ name: nom, type: type || 'direct' })
+    .select()
+    .single();
+  if (error) throw error;
+
+  if (participantIds?.length > 0) {
+    await supabase.from('conversation_members').insert(
+      participantIds.map(uid => ({ conversation_id: data.id, user_id: uid }))
+    );
+  }
+  return data;
+}
+
 export function unsubscribeChannel(channel) {
   supabase.removeChannel(channel);
 }
