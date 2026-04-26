@@ -3217,14 +3217,15 @@ useEffect(() => {
     async function load() {
       const { data, error } = await supabase
         .from("quotes")
-        .select("*, quote_lines(*)")
+        .select("*, quote_lines(*), clients(name)")
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (error) {
         console.error(error);
         setDevis(DEVIS_INIT);
       } else {
-        setDevis(data.length > 0 ? data : DEVIS_INIT);
+        const mapped = (data || []).map(d => mapDevis(d));
+        setDevis(mapped.length > 0 ? mapped : DEVIS_INIT);
       }
     }
     load();
@@ -7627,8 +7628,8 @@ function AdminDevis({ devis, setDevis, clients, factures, setFactures }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filterStatut, setFilterStatut] = useState("Tout");
   const [form, setForm] = useState({
-    clientId: (clients || [])[0]?.id || 1,
-    clientNom: (clients || [])[0]?.nom || "",
+  clientId: (clients || [])[0]?.id || '',
+  clientNom: (clients || [])[0]?.nom || (clients || [])[0]?.name || '',
     objet: "",
     tva: 18,
     remise: 0,
@@ -7685,38 +7686,29 @@ function AdminDevis({ devis, setDevis, clients, factures, setFactures }) {
     alert(`✅ Facture ${num} créée !`);
   }
 
-  function addDevis() {
-    if (!form.objet) return;
-    const ht = form.lignes.reduce((s, l) => s + (l.total || 0), 0);
-    const apresRemise = ht * (1 - form.remise / 100);
-    const ttc = Math.round(apresRemise * (1 + form.tva / 100));
-    const num = `DEV-2025-${String((devis || []).length + 1).padStart(3, "0")}`;
-    setDevis((p) => [
-      ...(p || []),
-      {
-        ...form,
-        id: Date.now(),
-        numero: num,
-        montantHT: Math.round(apresRemise),
-        montantTTC: ttc,
-        statut: "Brouillon",
-        dateCreation: todayStr(),
-        dateExpiration: "",
-        dateAcceptation: null,
-        chantierId: null,
-      },
-    ]);
+  async function addDevis() {
+  if (!form.objet) return;
+  try {
+    const nouveau = await createDevis({
+      clientId: form.clientId,
+      objet: form.objet,
+      tva: form.tva,
+      remise: form.remise,
+      notes: form.notes,
+      lignes: form.lignes,
+    }, null);
+    setDevis(p => [...(p || []), nouveau]);
     setForm({
-      clientId: (clients || [])[0]?.id || 1,
-      clientNom: (clients || [])[0]?.nom || "",
-      objet: "",
-      tva: 18,
-      remise: 0,
-      notes: "",
-      lignes: [{ id: 1, description: "", quantite: 1, prixUnit: 0, total: 0 }],
+      clientId: (clients || [])[0]?.id || '',
+      clientNom: (clients || [])[0]?.nom || (clients || [])[0]?.name || '',
+      objet: '', tva: 18, remise: 0, notes: '',
+      lignes: [{ id: 1, description: '', quantite: 1, prixUnit: 0, total: 0 }]
     });
     setShowAdd(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   return (
     <div>
@@ -8095,19 +8087,17 @@ function AdminDevis({ devis, setDevis, clients, factures, setFactures }) {
               className="field"
               value={form.clientId}
               onChange={(e) => {
-                const c = (clients || []).find(
-                  (x) => x.id === parseInt(e.target.value),
-                );
-                setForm((f) => ({
+                const c = (clients || []).find(x => x.id === e.target.value);
+                setForm(f => ({
                   ...f,
-                  clientId: parseInt(e.target.value),
-                  clientNom: c?.nom || "",
+                  clientId: e.target.value,
+                  clientNom: c?.nom || c?.name || "",
                 }));
               }}
             >
               {(clients || []).map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.nom}
+                  {c.nom || c.name}
                 </option>
               ))}
             </select>

@@ -3,6 +3,8 @@ import { supabase } from '../supabase';
 // devis.js
 // ═══════════════════════════════════════
 
+const COMPANY_ID = '00000000-0000-0000-0000-000000000001';
+
 export async function genRefDevis() {
   const year = new Date().getFullYear();
   const { count } = await supabase.from('quotes').select('*', { count: 'exact', head: true }).like('reference', `DEV-${year}-%`);
@@ -13,14 +15,21 @@ export function mapDevis(d) {
   return {
     ...d,
     numero: d.reference,
-    clientNom: d.clients?.name || '',
+    clientNom: d.clients?.name || d.clientNom || '',
     objet: d.subject,
     montantHT: d.amount_ht,
     montantTTC: d.amount_ttc,
+    tva: d.tax_rate,
     statut: { draft: 'Brouillon', sent: 'Envoyé', accepted: 'Accepté', refused: 'Refusé', expired: 'Expiré', invoiced: 'Facturé' }[d.status] || d.status,
     dateCreation: d.created_at ? new Date(d.created_at).toLocaleDateString('fr-CI') : '',
     dateExpiration: d.validity_date ? new Date(d.validity_date).toLocaleDateString('fr-CI') : '',
-    lignes: d.quote_lines || [],
+    lignes: (d.quote_lines || []).map(l => ({
+      ...l,
+      description: l.description,
+      quantite: l.quantity,
+      prixUnit: l.unit_price,
+      total: l.total_ht,
+    })),
   };
 }
 
