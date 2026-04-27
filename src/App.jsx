@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
 import { createChantier, updateChantier, deleteChantier, assignerEquipe, mapChantier } from './services/chantiers';
-import { createTache, toggleTache, deleteTache } from './services/taches';
 import { pointerArrivee, pointerDepart } from './services/presences';
 import { uploadPhoto } from './services/photos';
 import { signalerBlocage, resoudreBlocage } from './services/blocages';
@@ -13,6 +12,7 @@ import { createContrat, deleteContrat, mapContrat } from './services/contrats';
 import { createEquipement, attribuerEquipement, restituerEquipement } from './services/equipements';
 import { sendMessage, createConversation, subscribeToConversation, unsubscribeChannel } from './services/messages';
 import { uploadDocument, deleteDocument } from './services/documents';
+import { createTache, toggleTache as toggleTacheDB, deleteTache } from './services/taches';
 // ════════════ DONNÉES ════════════
 
 const USERS = [
@@ -2055,6 +2055,8 @@ function TechnicienView({ user, state, onLogout }) {
   });
   const photoRef = useRef();
   const [showNt, setShowNt] = useState(false);
+  const [showRestituer, setShowRestituer] = useState(null);
+  const [restForm, setRestForm] = useState({ etatRetour: "Bon", notes: "", quantite: 1 });
 
   const retards = mesMissions.filter(
     (c) => c.statut !== "Terminé" && joursRestants(c.dateFin) < 0,
@@ -2077,15 +2079,23 @@ function TechnicienView({ user, state, onLogout }) {
     if (selected?.id === id) setSelected((p) => ({ ...p, ...patch }));
   }
 
-  function toggleTache(tid) {
-    const taches = selected.taches.map((t) =>
-      t.id === tid ? { ...t, done: !t.done } : t,
+  async function toggleTache(tid) {
+  const t = selected.taches.find(x => x.id === tid);
+  if (!t) return;
+  try {
+    await toggleTacheDB(t.id, !t.done, user.id);
+    const taches = selected.taches.map(x =>
+      x.id === tid ? { ...x, done: !x.done } : x
     );
     const av = Math.round(
-      (taches.filter((t) => t.done).length / taches.length) * 100,
+      (taches.filter(x => x.done).length / taches.length) * 100
     );
     upd(selected.id, { taches, avancement: av });
+    await updateChantier(selected.id, { avancement: av });
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   function handlePhoto(e) {
     Array.from(e.target.files).forEach((file) => {
@@ -3400,7 +3410,7 @@ setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
         quantite: a.quantity,
         dateAttribution: a.assigned_at,
         dateRetourPrevue: a.expected_return_at,
-        dateRetour: null,
+        dateRetour: a.returned_at || null,
         etatDepart: a.condition_out,
       }));
 
@@ -3617,9 +3627,7 @@ function ChefView({ user, state, onLogout }) {
   } = state;
 
   // Chantiers filtrés : uniquement ceux où le chef est assigné
-  const mesChantiers = chantiers.filter((c) =>
-    c.equipe.some((m) => m.includes(user.nom.split(" ")[0])),
-  );
+  const mesChantiers = chantiers;
 
   const [tab, setTab] = useState("dashboard");
   const [selected, setSelected] = useState(null);
@@ -3634,13 +3642,16 @@ function ChefView({ user, state, onLogout }) {
     statut: "En cours",
   });
   const [showNt, setShowNt] = useState(false);
-  const [showAddDoc, setShowAddDoc] = useState(false);
-  const [docForm, setDocForm] = useState({
-    nom: "",
-    type: "pdf",
-    categorie: "Rapport",
-    description: "",
-  });
+const [showAddDoc, setShowAddDoc] = useState(false);
+const [showRestituer, setShowRestituer] = useState(null);
+const [restForm, setRestForm] = useState({ etatRetour: "Bon", notes: "", quantite: 1 });
+const [docForm, setDocForm] = useState({
+  nom: "",
+  type: "pdf",
+  categorie: "Rapport",
+  description: "",
+  file: null,
+});
 
   // IA
   const [aiMessages, setAiMessages] = useState([
@@ -3657,6 +3668,11 @@ function ChefView({ user, state, onLogout }) {
   const photoRef = useRef();
 
   // Stats
+  function getDepense(chantierId) {
+  return (state.factures || [])
+    .filter(f => f.project_id === chantierId || f.chantierId === chantierId)
+    .reduce((s, f) => s + (f.amount_paid || 0), 0);
+}
   const totalBudget = mesChantiers.reduce((s, c) => s + c.budget, 0);
   const totalDepense = mesChantiers.reduce((s, c) => s + getDepense(c.id), 0);
   const totalBlocages = mesChantiers.reduce(
@@ -3704,9 +3720,7 @@ function ChefView({ user, state, onLogout }) {
   );
 
   // Stocks : uniquement équipements déployés sur ses chantiers
-  const mesAttributions = (attributions || []).filter(
-    (a) => !a.dateRetour && mesChantiers.some((c) => c.id === a.chantierId),
-  );
+  const mesAttributions = (attributions || []).filter(a => !a.dateRetour);
 
   function upd(id, patch) {
     setChantiers((p) => p.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -3754,24 +3768,31 @@ function ChefView({ user, state, onLogout }) {
     setShowAddTache(false);
   }
 
-  function restituerEq(attrId) {
-    const attr = (attributions || []).find((a) => a.id === attrId);
-    if (!attr) return;
-    setAttributions((p) =>
-      p.map((a) =>
+  async function restituerEq(attrId) {
+  const attr = (attributions || []).find(a => a.id === attrId);
+  if (!attr) return;
+  try {
+    await restituerEquipement(attr.id, user.id);
+    setAttributions(p =>
+      p.map(a =>
         a.id === attrId
-          ? { ...a, dateRetour: todayStr(), etatRetour: "Bon" }
+          ? { ...a, dateRetour: todayStr(), etatRetour: restForm.etatRetour }
           : a,
       ),
     );
-    setEquipements((p) =>
-      p.map((e) =>
+    setEquipements(p =>
+      p.map(e =>
         e.id === attr.equipementId
-          ? { ...e, quantiteDisponible: e.quantiteDisponible + attr.quantite }
+          ? { ...e, quantiteDisponible: e.quantiteDisponible + (restForm.quantite || attr.quantite) }
           : e,
       ),
     );
+    setShowRestituer(null);
+    setRestForm({ etatRetour: "Bon", notes: "", quantite: 1 });
+  } catch (err) {
+    alert('Erreur: ' + err.message);
   }
+}
 
   useEffect(() => {
     aiEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -9221,7 +9242,7 @@ function AdminStocks({
   if (!showRestituer) return;
   const attr = showRestituer;
   try {
-    await restituerEquipement(attr.id, null);
+    await restituerEquipement(attr.id, user.id);
     setAttributions(p =>
       (p || []).map(a =>
         a.id === attr.id
@@ -9873,51 +9894,60 @@ function AdminStocks({
 
       {/* Modal restitution */}
       {showRestituer && (
-        <Modal
-          title="✅ Restitution d'équipement"
-          onClose={() => setShowRestituer(null)}
-          width={420}
-        >
-          <div style={{ fontSize: 13, color: "#4a6a4d", marginBottom: 16 }}>
-            {showRestituer.equipementNom} · ×{showRestituer.quantite} ·{" "}
-            {showRestituer.technicien}
-          </div>
-          <div className="fg">
-            <label className="lbl">État au retour</label>
-            <select
-              className="field"
-              value={restForm.etatRetour}
-              onChange={(e) =>
-                setRestForm((f) => ({ ...f, etatRetour: e.target.value }))
-              }
-            >
-              {["Bon", "Usagé", "En maintenance", "Hors service"].map((et) => (
-                <option key={et}>{et}</option>
-              ))}
-            </select>
-          </div>
-          <div className="fg">
-            <label className="lbl">Observations</label>
-            <textarea
-              className="field"
-              style={{ minHeight: 80 }}
-              placeholder="Dommages, pièces manquantes..."
-              value={restForm.notes}
-              onChange={(e) =>
-                setRestForm((f) => ({ ...f, notes: e.target.value }))
-              }
-            />
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="btn-g" style={{ flex: 1 }} onClick={restituer}>
-              Confirmer restitution
-            </button>
-            <button className="btn-b" onClick={() => setShowRestituer(null)}>
-              Annuler
-            </button>
-          </div>
-        </Modal>
-      )}
+  <Modal
+    title="✅ Restitution d'équipement"
+    onClose={() => setShowRestituer(null)}
+    width={420}
+  >
+    <div style={{ fontSize: 13, color: "#4a6a4d", marginBottom: 16 }}>
+      {showRestituer.equipementNom} · ×{showRestituer.quantite} · {showRestituer.technicien}
+    </div>
+    <div className="fg">
+      <label className="lbl">Quantité à restituer</label>
+      <input
+        type="number"
+        min="1"
+        max={showRestituer.quantite}
+        className="field"
+        value={restForm.quantite || showRestituer.quantite}
+        onChange={(e) => setRestForm(f => ({ ...f, quantite: parseInt(e.target.value) || 1 }))}
+      />
+      <div style={{ fontSize: 11, color: "#4a6a4d", marginTop: 4 }}>
+        Max : {showRestituer.quantite}
+      </div>
+    </div>
+    <div className="fg">
+      <label className="lbl">État au retour</label>
+      <select
+        className="field"
+        value={restForm.etatRetour}
+        onChange={(e) => setRestForm(f => ({ ...f, etatRetour: e.target.value }))}
+      >
+        {["Bon", "Usagé", "En maintenance", "Hors service"].map(et => (
+          <option key={et}>{et}</option>
+        ))}
+      </select>
+    </div>
+    <div className="fg">
+      <label className="lbl">Observations</label>
+      <textarea
+        className="field"
+        style={{ minHeight: 80 }}
+        placeholder="Dommages, pièces manquantes..."
+        value={restForm.notes}
+        onChange={(e) => setRestForm(f => ({ ...f, notes: e.target.value }))}
+      />
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button className="btn-g" style={{ flex: 1 }} onClick={restituer}>
+        Confirmer restitution
+      </button>
+      <button className="btn-b" onClick={() => setShowRestituer(null)}>
+        Annuler
+      </button>
+    </div>
+  </Modal>
+)}
     </div>
   );
 }

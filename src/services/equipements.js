@@ -40,12 +40,25 @@ export async function attribuerEquipement(form, userId) {
 }
 
 export async function restituerEquipement(assignmentId, userId) {
-  const { data: attr, error: attrErr } = await supabase.from('equipment_assignments').select('*').eq('id', assignmentId).single();
+  const { data: attr, error: attrErr } = await supabase
+    .from('equipment_assignments')
+    .select('*')
+    .eq('id', assignmentId)
+    .single();
   if (attrErr) throw attrErr;
 
-  await supabase.from('equipment_returns').insert({ assignment_id: assignmentId, returned_at: new Date().toISOString().split('T')[0], condition_in: 'good', received_by: userId });
+  await supabase.from('equipment_returns').insert({
+    assignment_id: assignmentId,
+    returned_at: new Date().toISOString().split('T')[0],
+    condition_in: 'good',
+    received_by: userId
+  });
 
-  // Le trigger SQL remet le stock automatiquement
+  await supabase
+    .from('equipment_assignments')
+    .update({ returned_at: new Date().toISOString() })
+    .eq('id', assignmentId);
+
   return attr;
 }
 
