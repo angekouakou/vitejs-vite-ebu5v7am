@@ -1832,18 +1832,35 @@ function LoginPage({ onLogin }) {
   const [err, setErr] = useState("");
   const [showQ, setShowQ] = useState(false);
   async function login() {
-  const u = USERS.find((u) => u.email === email && u.password === pass);
-  if (!u) { setErr("Email ou mot de passe incorrect"); return; }
-  
-  // Récupérer le vrai UUID depuis Supabase
-  const { data } = await supabase
-    .from('users')
-    .select('id')
-    .eq('email', email)
-    .single();
-  
-  onLogin({ ...u, id: data?.id || u.id });
-}
+    setErr("");
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password: pass });
+      if (authError) { setErr("Email ou mot de passe incorrect"); return; }
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email, phone, role_id')
+        .eq('id', authData.user.id)
+        .single();
+      if (profileError || !profile) { setErr("Profil introuvable"); return; }
+      const { data: roleData } = await supabase
+        .from('roles')
+        .select('name')
+        .eq('id', profile.role_id)
+        .single();
+        console.log("roleData:", roleData);
+        console.log("role:", roleData?.name);
+      onLogin({
+        id: profile.id,
+        nom: `${profile.first_name} ${profile.last_name}`,
+        email: profile.email,
+        role: roleData?.name || 'technicien',
+        avatar: profile.first_name?.charAt(0) || '?',
+        tel: profile.phone || '',
+      });
+    } catch (err) {
+      setErr("Erreur de connexion");
+    }
+  }
   return (
     <div
       style={{
@@ -3594,7 +3611,10 @@ setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
     setConversations,
   };
 
-  const logout = () => setUser(null);
+  const logout = async () => {
+  await supabase.auth.signOut();
+  setUser(null);
+};
 
   return (
     <>
