@@ -2052,7 +2052,9 @@ function TechnicienView({ user, state, onLogout }) {
     setConversations,
     equipes,
   } = state;
-  const mesMissions = chantiers; // temporaire jusqu'à Supabase Auth
+  const mesMissions = chantiers.filter(c => 
+  (c.membres || []).includes(user.id) || c.chef_id === user.id
+);
   const [tab, setTab] = useState("missions");
   const [selected, setSelected] = useState(null);
   const [detailTab, setDetailTab] = useState("infos");
@@ -3196,15 +3198,14 @@ export default function App() {
     async function loadChantiers() {
       const { data, error } = await supabase
         .from("projects")
-        .select(
-          `
-        *,
-        clients(name),
-        users!projects_chef_id_fkey(first_name, last_name),
-        tasks(id, label, is_done),
-        blocages(id, type, is_resolved)
-      `,
-        )
+        .select(`
+          *,
+          clients(name),
+          users!projects_chef_id_fkey(first_name, last_name),
+          tasks(id, label, is_done),
+          blocages(id, type, is_resolved),
+          project_members(user_id)
+        `)
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
@@ -3222,6 +3223,7 @@ const mapped = (data || []).map(c => ({
   dateDebut: c.start_date,
   dateFin: c.end_date,
   equipe: (c.project_members || []).map(m => m.user_id),
+  membres: (c.project_members || []).map(m => m.user_id),
   taches: (c.tasks || []).map(t => ({ id: t.id, label: t.label, done: t.is_done })),
   blocages: (c.blocages || []).map(b => ({ id: b.id, type: b.type, resolu: b.is_resolved })),
   photos: [],
@@ -3645,7 +3647,7 @@ function ChefView({ user, state, onLogout }) {
   } = state;
 
   // Chantiers filtrés : uniquement ceux où le chef est assigné
-  const mesChantiers = chantiers;
+  const mesChantiers = chantiers.filter(c => c.chef_id === user.id);
 
   const [tab, setTab] = useState("dashboard");
   const [selected, setSelected] = useState(null);
