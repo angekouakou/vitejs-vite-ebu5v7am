@@ -1142,7 +1142,7 @@ function AssignModal({ chantier, equipes, onSave, onClose }) {
                 color: ROLE_COLORS[e.role],
               }}
             >
-              {e.nom.charAt(0)}
+              {(e.first_name || e.nom || '?').charAt(0)}
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#d4e8d6" }}>
@@ -4933,7 +4933,7 @@ const [docForm, setDocForm] = useState({
                       color: ROLE_COLORS[e.role],
                     }}
                   >
-                    {e.nom.charAt(0)}
+                    {(e.first_name || e.nom || '?').charAt(0)}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div
@@ -4943,10 +4943,10 @@ const [docForm, setDocForm] = useState({
                         color: "#d4e8d6",
                       }}
                     >
-                      {e.nom}
+                      {e.first_name ? `${e.first_name} ${e.last_name}` : e.nom}
                     </div>
                     <div style={{ fontSize: 12, color: "#4a6a4d" }}>
-                      {e.poste} · 📞 {e.tel}
+                      {e.poste || e.email}· 📞 {e.phone || e.tel}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -7175,16 +7175,16 @@ function AdminEquipes({ equipes, setEquipes, chantiers }) {
                     color: ROLE_COLORS[e.role],
                   }}
                 >
-                  {e.nom.charAt(0)}
+                  {(e.first_name || e.nom || '?').charAt(0)}
                 </div>
                 <div>
                   <div
                     style={{ fontSize: 13, fontWeight: 600, color: "#d4e8d6" }}
                   >
-                    {e.nom}
+                    {e.first_name ? `${e.first_name} ${e.last_name}` : e.nom}
                   </div>
                   <div style={{ fontSize: 11, color: "#4a6a4d" }}>
-                    {e.poste}
+                    {e.role || e.email || '—'}
                   </div>
                 </div>
               </div>
@@ -7204,7 +7204,7 @@ function AdminEquipes({ equipes, setEquipes, chantiers }) {
               </button>
             </div>
             <div style={{ fontSize: 11, color: "#3a5a3d", marginBottom: 8 }}>
-              📞 {e.tel}
+              📞 {e.phone || e.tel || '—'}
             </div>
             <div
               style={{
@@ -7214,7 +7214,7 @@ function AdminEquipes({ equipes, setEquipes, chantiers }) {
               }}
             >
               <span style={{ fontSize: 11, color: "#3a5a3d" }}>
-                {chantiers.filter((c) => (c.equipe || []).includes(e.nom)).length}{" "}
+                {chantiers.filter((c) => (c.equipe || []).includes(e.id)).length}{" "}
                 chantier(s)
               </span>
               <span
@@ -7225,7 +7225,7 @@ function AdminEquipes({ equipes, setEquipes, chantiers }) {
                   fontSize: 10,
                 }}
               >
-                {e.statut}
+                {e.statut || 'Actif'}
               </span>
             </div>
           </div>
