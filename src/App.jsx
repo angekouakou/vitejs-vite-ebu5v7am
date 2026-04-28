@@ -2083,7 +2083,7 @@ function TechnicienView({ user, state, onLogout }) {
   const t = selected.taches.find(x => x.id === tid);
   if (!t) return;
   try {
-    await toggleTacheDB(t.id, !t.done, user.id);
+    await toggleTacheDB(t.id, !t.done, null);
     const taches = selected.taches.map(x =>
       x.id === tid ? { ...x, done: !x.done } : x
     );
@@ -4476,16 +4476,20 @@ const [docForm, setDocForm] = useState({
                       <div
                         key={t.id}
                         className="trow"
-                        onClick={() => {
-                          const taches = selected.taches.map((x) =>
-                            x.id === t.id ? { ...x, done: !x.done } : x,
-                          );
-                          const av = Math.round(
-                            (taches.filter((x) => x.done).length /
-                              taches.length) *
-                              100,
-                          );
-                          upd(selected.id, { taches, avancement: av });
+                        onClick={async () => {
+                          try {
+                            await toggleTacheDB(t.id, !t.done, null);
+                            const taches = selected.taches.map(x =>
+                              x.id === t.id ? { ...x, done: !x.done } : x
+                            );
+                            const av = Math.round(
+                              (taches.filter(x => x.done).length / taches.length) * 100
+                            );
+                            upd(selected.id, { taches, avancement: av });
+                            await updateChantier(selected.id, { avancement: av });
+                          } catch (err) {
+                            alert('Erreur: ' + err.message);
+                          }
                         }}
                       >
                         <div className={`tcheck ${t.done ? "done" : ""}`}>
@@ -6477,11 +6481,13 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
                   className="trow"
                   onClick={async () => {
                     try {
-                      await toggleTache(t.id, !t.done, null);
+                      await toggleTacheDB(t.id, !t.done, null);
                       const taches = selected.taches.map(x =>
                         x.id === t.id ? { ...x, done: !x.done } : x
                       );
-                      const av = Math.round((taches.filter(x => x.done).length / taches.length) * 100);
+                      const av = Math.round(
+                        (taches.filter(x => x.done).length / taches.length) * 100
+                      );
                       upd(selected.id, { taches, avancement: av });
                       await updateChantier(selected.id, { avancement: av });
                     } catch (err) {
