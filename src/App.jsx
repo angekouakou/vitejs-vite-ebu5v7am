@@ -3771,22 +3771,36 @@ const [docForm, setDocForm] = useState({
   async function restituerEq(attrId) {
   const attr = (attributions || []).find(a => a.id === attrId);
   if (!attr) return;
+  const qteRestituee = restForm.quantite || attr.quantite;
   try {
-    await restituerEquipement(attr.id, user.id);
-    setAttributions(p =>
-      p.map(a =>
-        a.id === attrId
-          ? { ...a, dateRetour: todayStr(), etatRetour: restForm.etatRetour }
-          : a,
-      ),
-    );
+    const result = await restituerEquipement(attr.id, user.id, qteRestituee);
+
+    if (result.qteRestante > 0) {
+      setAttributions(p =>
+        (p || []).map(a =>
+          a.id === attrId
+            ? { ...a, quantite: result.qteRestante }
+            : a,
+        ),
+      );
+    } else {
+      setAttributions(p =>
+        (p || []).map(a =>
+          a.id === attrId
+            ? { ...a, dateRetour: todayStr(), etatRetour: restForm.etatRetour }
+            : a,
+        ),
+      );
+    }
+
     setEquipements(p =>
       p.map(e =>
-        e.id === attr.equipementId
-          ? { ...e, quantiteDisponible: e.quantiteDisponible + (restForm.quantite || attr.quantite) }
+        String(e.id) === String(attr.equipementId)
+          ? { ...e, quantiteDisponible: result.quantiteDisponible }
           : e,
       ),
     );
+
     setShowRestituer(null);
     setRestForm({ etatRetour: "Bon", notes: "", quantite: 1 });
   } catch (err) {
@@ -5030,9 +5044,12 @@ const [docForm, setDocForm] = useState({
                         {a.dateRetourPrevue || "N/A"}
                       </div>
                     </div>
-                    <button className="btn-b" onClick={() => restituerEq(a.id)}>
-                      ✅ Restituer
-                    </button>
+                    <button className="btn-b" onClick={() => {
+                    setRestForm({ etatRetour: "Bon", notes: "", quantite: a.quantite });
+                    setShowRestituer(a);
+                  }}>
+                    ✅ Restituer
+                  </button>
                   </div>
                 </div>
               ))
@@ -5508,6 +5525,61 @@ const [docForm, setDocForm] = useState({
         Ajouter
       </button>
       <button className="btn-b" onClick={() => setShowAddDoc(false)}>
+        Annuler
+      </button>
+    </div>
+  </Modal>
+)}
+{showRestituer && (
+  <Modal
+    title="✅ Restitution d'équipement"
+    onClose={() => setShowRestituer(null)}
+    width={420}
+  >
+    <div style={{ fontSize: 13, color: "#4a6a4d", marginBottom: 16 }}>
+      {showRestituer.equipementNom} · ×{showRestituer.quantite} · {showRestituer.technicien}
+    </div>
+    <div className="fg">
+      <label className="lbl">Quantité à restituer</label>
+      <input
+        type="number"
+        min="1"
+        max={showRestituer.quantite}
+        className="field"
+        value={restForm.quantite || showRestituer.quantite}
+        onChange={(e) => setRestForm(f => ({ ...f, quantite: parseInt(e.target.value) || 1 }))}
+      />
+      <div style={{ fontSize: 11, color: "#4a6a4d", marginTop: 4 }}>
+        Max : {showRestituer.quantite}
+      </div>
+    </div>
+    <div className="fg">
+      <label className="lbl">État au retour</label>
+      <select
+        className="field"
+        value={restForm.etatRetour}
+        onChange={(e) => setRestForm(f => ({ ...f, etatRetour: e.target.value }))}
+      >
+        {["Bon", "Usagé", "En maintenance", "Hors service"].map(et => (
+          <option key={et}>{et}</option>
+        ))}
+      </select>
+    </div>
+    <div className="fg">
+      <label className="lbl">Observations</label>
+      <textarea
+        className="field"
+        style={{ minHeight: 80 }}
+        placeholder="Dommages, pièces manquantes..."
+        value={restForm.notes}
+        onChange={(e) => setRestForm(f => ({ ...f, notes: e.target.value }))}
+      />
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button className="btn-g" style={{ flex: 1 }} onClick={() => restituerEq(showRestituer.id)}>
+        Confirmer restitution
+      </button>
+      <button className="btn-b" onClick={() => setShowRestituer(null)}>
         Annuler
       </button>
     </div>
@@ -9194,44 +9266,43 @@ function AdminStocks({
 }
 
   async function attribuer() {
-    console.log('attribuer appelé', attrForm);
-  const eq = (equipements || []).find(
-  (e) => String(e.id) === String(attrForm.equipementId),
-);
+  const eq = (equipements || []).find(e => String(e.id) === String(attrForm.equipementId));
   const qte = parseInt(attrForm.quantite) || 1;
   if (!eq || eq.quantiteDisponible < qte || !attrForm.technicien) return;
-  const chantier = (chantiers || []).find(
-  (c) => String(c.id) === String(attrForm.chantierId),
-);
+  const chantier = (chantiers || []).find(c => String(c.id) === String(attrForm.chantierId));
   try {
-    const data = await attribuerEquipement({
+    const result = await attribuerEquipement({
       equipementId: attrForm.equipementId,
       chantierId: null,
       technicienId: attrForm.technicien,
       quantite: qte,
       dateRetourPrevue: attrForm.dateRetourPrevue || null,
-      quantiteDispo: eq.quantiteDisponible,
     }, null);
+
     setAttributions(p => [
       ...(p || []),
       {
-        ...data,
+        ...result.assignment,
+        equipementId: eq.id,
         equipementNom: eq.nom,
         chantierNom: chantier?.nom || "",
+        technicien: attrForm.technicien,
+        quantite: qte,
         dateAttribution: todayStr(),
         dateRetour: null,
         etatDepart: "Bon",
         etatRetour: null,
       },
     ]);
+
+    // Stock mis à jour par le trigger Supabase, on utilise la valeur réelle
     setEquipements(p =>
       (p || []).map(e =>
-        e.id === eq.id
-          ? { ...e, quantiteDisponible: e.quantiteDisponible - qte }
+        String(e.id) === String(attrForm.equipementId)
+          ? { ...e, quantiteDisponible: result.quantiteDisponible }
           : e,
       ),
     );
-    console.log('fermeture modal');
     setShowAttribuer(false);
   } catch (err) {
     alert('Erreur: ' + err.message);
@@ -9241,24 +9312,39 @@ function AdminStocks({
   async function restituer() {
   if (!showRestituer) return;
   const attr = showRestituer;
+  const qteRestituee = restForm.quantite || attr.quantite;
   try {
-    await restituerEquipement(attr.id, user.id);
-    setAttributions(p =>
-      (p || []).map(a =>
-        a.id === attr.id
-          ? { ...a, dateRetour: todayStr(), etatRetour: restForm.etatRetour, notes: restForm.notes }
-          : a,
-      ),
-    );
-    console.log('attr.equipementId:', attr.equipementId, 'attr.quantite:', attr.quantite);
+    const result = await restituerEquipement(attr.id, user.id, qteRestituee);
+
+    if (result.qteRestante > 0) {
+      // Restitution partielle — mettre à jour la quantité dans la liste
+      setAttributions(p =>
+        (p || []).map(a =>
+          a.id === attr.id
+            ? { ...a, quantite: result.qteRestante }
+            : a,
+        ),
+      );
+    } else {
+      // Restitution totale — retirer de la liste
+      setAttributions(p =>
+        (p || []).map(a =>
+          a.id === attr.id
+            ? { ...a, dateRetour: todayStr(), etatRetour: restForm.etatRetour }
+            : a,
+        ),
+      );
+    }
+
     setEquipements(p =>
       (p || []).map(e =>
-        e.id === attr.equipementId
-          ? { ...e, quantiteDisponible: e.quantiteDisponible + attr.quantite }
+        String(e.id) === String(attr.equipementId)
+          ? { ...e, quantiteDisponible: result.quantiteDisponible }
           : e,
       ),
     );
-    setRestForm({ etatRetour: "Bon", notes: "" });
+
+    setRestForm({ etatRetour: "Bon", notes: "", quantite: 1 });
     setShowRestituer(null);
   } catch (err) {
     alert('Erreur: ' + err.message);
