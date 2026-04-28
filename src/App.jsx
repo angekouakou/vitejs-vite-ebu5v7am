@@ -3616,6 +3616,38 @@ setFactures(mapped.length > 0 ? mapped : FACTURES_INIT);
   setUser(null);
 };
 
+useEffect(() => {
+  supabase.auth.getSession().then(async ({ data: { session } }) => {
+    if (!session) return;
+    const { data: profile } = await supabase
+      .from('users')
+      .select('id, first_name, last_name, email, phone, role_id')
+      .eq('id', session.user.id)
+      .single();
+    if (profile) {
+      const { data: roleData } = await supabase
+        .from('roles')
+        .select('name')
+        .eq('id', profile.role_id)
+        .single();
+      setUser({
+        id: profile.id,
+        nom: `${profile.first_name} ${profile.last_name}`,
+        email: profile.email,
+        role: roleData?.name || 'technicien',
+        avatar: profile.first_name?.charAt(0) || '?',
+        tel: profile.phone || '',
+      });
+    }
+  });
+
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!session) setUser(null);
+  });
+
+  return () => subscription.unsubscribe();
+}, []);
+
   return (
     <>
       <style>{CSS}</style>
