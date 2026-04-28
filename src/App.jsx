@@ -3631,11 +3631,11 @@ function ChefView({ user, state, onLogout }) {
 
   const [tab, setTab] = useState("dashboard");
   const [selected, setSelected] = useState(null);
+  const [showAddTache, setShowAddTache] = useState(false);
+  const [nouvTache, setNouvTache] = useState("");
   const [detailTab, setDetailTab] = useState("infos");
   const [showUpdate, setShowUpdate] = useState(null);
   const [showAssign, setShowAssign] = useState(null);
-  const [showAddTache, setShowAddTache] = useState(false);
-  const [nouvTache, setNouvTache] = useState("");
   const [upForm, setUpForm] = useState({
     avancement: 0,
     depense: 0,
@@ -5398,36 +5398,36 @@ const [docForm, setDocForm] = useState({
       )}
 
       {showAddTache && (
-        <Modal
-          title="Nouvelle tâche"
-          onClose={() => setShowAddTache(false)}
-          width={400}
-        >
-          <div className="fg">
-            <label className="lbl">Description *</label>
-            <input
-              className="field"
-              placeholder="Ex: Installation câblage..."
-              value={nouvTache}
-              onChange={(e) => setNouvTache(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && ajouterTache()}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              className="btn-g"
-              style={{ flex: 1 }}
-              onClick={ajouterTache}
-              disabled={!nouvTache.trim()}
-            >
-              Ajouter
-            </button>
-            <button className="btn-b" onClick={() => setShowAddTache(false)}>
-              Annuler
-            </button>
-          </div>
-        </Modal>
-      )}
+  <Modal
+    title="Nouvelle tâche"
+    onClose={() => setShowAddTache(false)}
+    width={400}
+  >
+    <div className="fg">
+      <label className="lbl">Description *</label>
+      <input
+        className="field"
+        placeholder="Ex: Installation câblage..."
+        value={nouvTache}
+        onChange={(e) => setNouvTache(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && ajouterTache()}
+      />
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button
+        className="btn-g"
+        style={{ flex: 1 }}
+        onClick={ajouterTache}
+        disabled={!nouvTache.trim()}
+      >
+        Ajouter
+      </button>
+      <button className="btn-b" onClick={() => setShowAddTache(false)}>
+        Annuler
+      </button>
+    </div>
+  </Modal>
+)}
 
       {showAddDoc && (
   <Modal
@@ -6128,12 +6128,27 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
     dateDebut: "",
     dateFin: "",
   });
+  const [showAddTache, setShowAddTache] = useState(false);
+  const [nouvTache, setNouvTache] = useState("");
   const [upForm, setUpForm] = useState({
     avancement: 0,
     depense: 0,
     statut: "En cours",
   });
   const photoRef = useRef();
+  async function ajouterTache() {
+  if (!nouvTache.trim() || !selected) return;
+  try {
+    const nouvelle = await createTache(selected.id, nouvTache.trim());
+    upd(selected.id, {
+      taches: [...(selected.taches || []), { id: nouvelle.id, label: nouvTache.trim(), done: false }],
+    });
+    setNouvTache("");
+    setShowAddTache(false);
+  } catch (err) {
+    alert('Erreur: ' + err.message);
+  }
+}
 
   function upd(id, patch) {
     setChantiers((p) => p.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -6460,21 +6475,12 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
           {detailTab === "taches" && (
             <div>
               <button
-                className="btn-a"
-                style={{ marginBottom: 12 }}
-                onClick={() => {
-                  const t = prompt("Nom de la tâche :");
-                  if (t)
-                    upd(selected.id, {
-                      taches: [
-                        ...(selected.taches || []),
-                        { id: Date.now(), label: t, done: false },
-                      ],
-                    });
-                }}
-              >
-                + Tâche
-              </button>
+              className="btn-a"
+              style={{ marginBottom: 12 }}
+              onClick={() => setShowAddTache(true)}
+            >
+              + Tâche
+            </button>
               {(selected.taches || []).map((t) => (
                 <div
                   key={t.id}
@@ -7084,6 +7090,28 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
               Créer
             </button>
             <button className="btn-b" onClick={() => setShowAdd(false)}>
+              Annuler
+            </button>
+          </div>
+        </Modal>
+      )}
+      {showAddTache && (
+        <Modal title="Nouvelle tâche" onClose={() => setShowAddTache(false)} width={400}>
+          <div className="fg">
+            <label className="lbl">Description *</label>
+            <input
+              className="field"
+              placeholder="Ex: Installation câblage..."
+              value={nouvTache}
+              onChange={(e) => setNouvTache(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && ajouterTache()}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn-g" style={{ flex: 1 }} onClick={ajouterTache} disabled={!nouvTache.trim()}>
+              Ajouter
+            </button>
+            <button className="btn-b" onClick={() => setShowAddTache(false)}>
               Annuler
             </button>
           </div>
