@@ -7143,6 +7143,7 @@ function AdminChantiers({ chantiers, setChantiers, equipes, user, factures }) {
 // ─── ÉQUIPES ──────────────────────────────────────────────────
 function AdminEquipes({ equipes, setEquipes, chantiers }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(null);
   const [form, setForm] = useState({
     nom: "",
     role: "technicien",
@@ -7250,86 +7251,156 @@ function AdminEquipes({ equipes, setEquipes, chantiers }) {
         ))}
       </div>
       {showAdd && (
-        <Modal
-          title="Ajouter un membre"
-          onClose={() => setShowAdd(false)}
-          width={400}
-        >
-          <div className="fg">
-            <label className="lbl">Nom complet *</label>
-            <input
-              className="field"
-              value={form.nom}
-              onChange={(e) => setForm((f) => ({ ...f, nom: e.target.value }))}
-            />
-          </div>
-          <div className="fg">
-            <label className="lbl">Rôle</label>
-            <select
-              className="field"
-              value={form.role}
-              onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-            >
-              <option value="chef">Chef de chantier</option>
-              <option value="technicien">Technicien</option>
-            </select>
-          </div>
-          <div className="fg">
-            <label className="lbl">Poste</label>
-            <select
-              className="field"
-              value={form.poste}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, poste: e.target.value }))
-              }
-            >
-              {[
-                "Chef de chantier",
-                "Technicien RF",
-                "Technicien Civil",
-                "Ingénieur Fibre",
-                "Technicien Réseau",
-                "Auditeur Réseau",
-              ].map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-          <div className="fg">
-            <label className="lbl">Téléphone</label>
-            <input
-              className="field"
-              placeholder="07 00 00 00"
-              value={form.tel}
-              onChange={(e) => setForm((f) => ({ ...f, tel: e.target.value }))}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              className="btn-g"
-              style={{ flex: 1 }}
-              onClick={() => {
-                if (!form.nom) return;
-                setEquipes((p) => [...p, { ...form, id: Date.now() }]);
-                setForm({
-                  nom: "",
-                  role: "technicien",
-                  poste: "Technicien RF",
-                  tel: "",
-                  statut: "Actif",
-                });
-                setShowAdd(false);
-              }}
-              disabled={!form.nom}
-            >
-              Ajouter
-            </button>
-            <button className="btn-b" onClick={() => setShowAdd(false)}>
-              Annuler
-            </button>
-          </div>
-        </Modal>
-      )}
+  <Modal
+    title="Ajouter un membre"
+    onClose={() => setShowAdd(false)}
+    width={400}
+  >
+    <div className="fg">
+      <label className="lbl">Nom complet *</label>
+      <input
+        className="field"
+        value={form.nom}
+        onChange={(e) => setForm((f) => ({ ...f, nom: e.target.value }))}
+      />
+    </div>
+    <div className="fg">
+      <label className="lbl">Email *</label>
+      <input
+        className="field"
+        type="email"
+        placeholder="prenom@diginets.ci"
+        value={form.email || ''}
+        onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+      />
+    </div>
+    <div className="fg">
+      <label className="lbl">Rôle</label>
+      <select
+        className="field"
+        value={form.role}
+        onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+      >
+        <option value="chef">Chef de chantier</option>
+        <option value="technicien">Technicien</option>
+      </select>
+    </div>
+    <div className="fg">
+      <label className="lbl">Poste</label>
+      <select
+        className="field"
+        value={form.poste}
+        onChange={(e) => setForm((f) => ({ ...f, poste: e.target.value }))}
+      >
+        {[
+          "Chef de chantier",
+          "Technicien RF",
+          "Technicien Civil",
+          "Ingénieur Fibre",
+          "Technicien Réseau",
+          "Auditeur Réseau",
+        ].map((p) => (
+          <option key={p}>{p}</option>
+        ))}
+      </select>
+    </div>
+    <div className="fg">
+      <label className="lbl">Téléphone</label>
+      <input
+        className="field"
+        placeholder="07 00 00 00"
+        value={form.tel}
+        onChange={(e) => setForm((f) => ({ ...f, tel: e.target.value }))}
+      />
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button
+        className="btn-g"
+        style={{ flex: 1 }}
+        onClick={async () => {
+          if (!form.nom || !form.email) return;
+          try {
+            const [firstName, ...lastParts] = form.nom.trim().split(' ');
+            const lastName = lastParts.join(' ') || '.';
+            const { data: { session } } = await supabase.auth.getSession();
+            const res = await fetch('https://afqfxsmgsdlaazylwsnh.supabase.co/functions/v1/invite-user', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                email: form.email,
+                firstName,
+                lastName,
+                roleId: form.role === 'chef'
+                  ? '00000000-0000-0000-0001-000000000002'
+                  : '00000000-0000-0000-0001-000000000003',
+                phone: form.tel,
+              }),
+            });
+            const data = await res.json();
+              if (data.error) throw new Error(data.error);
+              setShowConfirm({ nom: form.nom, email: form.email });
+              setShowAdd(false);
+              setForm({ nom: '', role: 'technicien', poste: 'Technicien RF', tel: '', email: '', statut: 'Actif' });
+          } catch (err) {
+            alert('Erreur: ' + err.message);
+          }
+        }}
+        disabled={!form.nom || !form.email}
+      >
+        Inviter
+      </button>
+      <button className="btn-b" onClick={() => setShowAdd(false)}>
+        Annuler
+      </button>
+    </div>
+  </Modal>
+)}
+  {showConfirm && (
+  <Modal title="✅ Compte créé" onClose={() => setShowConfirm(null)} width={420}>
+    <div style={{ background: "#0d1610", border: "1px solid #1a3a2a", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div style={{ fontSize: 13, color: "#4a6a4d", marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        Informations de connexion
+      </div>
+      <div style={{ fontSize: 14, color: "#d4e8d6", marginBottom: 6 }}>
+        👤 <strong>{showConfirm.nom}</strong>
+      </div>
+      <div style={{ fontSize: 14, color: "#d4e8d6", marginBottom: 6 }}>
+        ✉️ {showConfirm.email}
+      </div>
+      <div style={{ fontSize: 14, color: "#d4e8d6" }}>
+        🔑 Diginets2025!
+      </div>
+    </div>
+    <div style={{ fontSize: 12, color: "#4a6a4d", marginBottom: 16 }}>
+      Communiquez ces informations à l'utilisateur. Il pourra changer son mot de passe après connexion.
+    </div>
+    <div style={{ display: "flex", gap: 10 }}>
+      <button
+        className="btn-a"
+        style={{ flex: 1 }}
+        onClick={() => {
+          navigator.clipboard.writeText(`Email : ${showConfirm.email}\nMot de passe : Diginets2025!`);
+          alert("Copié !");
+        }}
+      >
+        📋 Copier
+      </button>
+      <button
+        className="btn-g"
+        style={{ flex: 1 }}
+        onClick={() => whatsapp("", `Bonjour ${showConfirm.nom.split(" ")[0]} 👋\n\nTon accès DIGINETS CI est prêt :\n\n📧 Email : ${showConfirm.email}\n🔑 Mot de passe : Diginets2025!\n\n🔗 https://diginets.vercel.app\n\nConnecte-toi et change ton mot de passe dès que possible.`)}
+      >
+        💬 WhatsApp
+      </button>
+      <button className="btn-b" onClick={() => setShowConfirm(null)}>
+        Fermer
+      </button>
+    </div>
+  </Modal>
+)}
     </div>
   );
 }
@@ -7338,6 +7409,7 @@ function AdminEquipes({ equipes, setEquipes, chantiers }) {
 function AdminClients({ clients, setClients, devis, factures }) {
   const [selected, setSelected] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(null);
   const [form, setForm] = useState({
     nom: "",
     secteur: "Télécom",
