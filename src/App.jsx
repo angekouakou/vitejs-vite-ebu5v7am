@@ -1847,8 +1847,6 @@ function LoginPage({ onLogin }) {
         .select('name')
         .eq('id', profile.role_id)
         .single();
-        console.log("roleData:", roleData);
-        console.log("role:", roleData?.name);
       onLogin({
         id: profile.id,
         nom: `${profile.first_name} ${profile.last_name}`,
@@ -9187,7 +9185,6 @@ function AdminContrats({ contrats, setContrats, clients }) {
               onClick={async () => {
                 if (!form.objet || !form.valeur) return;
                 try {
-                  console.log('clientId:', form.clientId);
                   const nouveau = await createContrat({
                     clientId: form.clientId,
                     type: form.type,
